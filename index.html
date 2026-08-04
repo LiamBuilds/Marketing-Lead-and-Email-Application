@@ -1,486 +1,579 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lead Review — HAGGERTY</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HAGGERTY Outreach</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<script>
-/* ============================================================
-   CONFIG — edit these if your n8n webhook URLs ever change
-   ============================================================ */
-const CONFIG = {
-  BATCH_URL:   "https://haggertybuilds.app.n8n.cloud/webhook/lead-review-batch",
-  APPROVE_URL: "https://haggertybuilds.app.n8n.cloud/webhook/lead-review-approve",
-  LABELS: ["Industrial", "Automotive", "Property Manager"],
-  HOME_TERRITORIES: ["Central Valley", "Sacramento / North", "Bay Area"]
-};
-</script>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-:root{
-  --ink:#1F1E1C; --ink-soft:#5C5A55; --ink-faint:#A9A7A1;
-  --paper:#EBEAE6; --card:#FFFFFF;
-  --gray:#4D4D4D; --rule:#CBC9C3; --rule-soft:#E4E2DD;
-  --orange:#F68922; --orange-deep:#B4610C; --orange-wash:#FDF2E4;
-  --red:#A32118; --red-wash:#FBEDEC;
-  --shadow:0 1px 0 rgba(31,30,28,.06), 0 2px 8px rgba(31,30,28,.05);
-  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --s7:48px;
-  --display:'Archivo',system-ui,'Helvetica Neue',Arial,sans-serif;
-  --body:'IBM Plex Sans',system-ui,-apple-system,Segoe UI,sans-serif;
-  --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
-}
-*{box-sizing:border-box}
-html,body{margin:0;padding:0}
-body{background:var(--paper);color:var(--ink);font-family:var(--body);
-  font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;padding-bottom:96px}
-:focus-visible{outline:2px solid var(--orange);outline-offset:2px}
-a{color:var(--orange-deep)}
+  :root{
+    --ink:#1C1B1A;
+    --paper:#FAF9F7;
+    --card:#FFFFFF;
+    --rule:#DFDBD4;
+    --rule-soft:#EDEAE5;
+    --grey:#4D4D4D;
+    --slate:#6E7477;
+    --orange:#F68922;
+    --orange-tint:#FEF3E7;
+    --green:#3F7D5C;
+    --red:#A6402C;
 
-/* ---------- Title block ---------- */
-.titleblock{background:var(--gray);color:#fff;border-bottom:3px solid var(--orange)}
-.tb-top{max-width:1180px;margin:0 auto;padding:var(--s5) var(--s5) var(--s4);
-  display:flex;align-items:center;gap:var(--s4);flex-wrap:wrap}
-.mark{width:34px;height:34px;flex:none;display:block}
-.mark rect{fill:var(--orange)}
-.wordmark{font-family:var(--display);font-weight:700;font-size:23px;
-  letter-spacing:.15em;text-transform:uppercase;line-height:1}
-.tb-title{font-family:var(--display);font-weight:500;font-size:13px;
-  letter-spacing:.22em;text-transform:uppercase;color:rgba(255,255,255,.72);
-  border-left:1px solid rgba(255,255,255,.28);padding-left:var(--s4)}
-.tb-grid{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr);
-  border-top:1px solid rgba(255,255,255,.18)}
-.tb-cell{padding:var(--s3) var(--s5) var(--s4);border-right:1px solid rgba(255,255,255,.18)}
-.tb-cell:last-child{border-right:0}
-.tb-key{font-family:var(--display);font-size:10px;font-weight:600;letter-spacing:.18em;
-  text-transform:uppercase;color:rgba(255,255,255,.58);margin-bottom:2px}
-.tb-val{font-family:var(--mono);font-size:19px;font-weight:500;letter-spacing:-.01em}
+    --display:"Barlow Condensed",system-ui,sans-serif;
+    --body:"IBM Plex Sans",system-ui,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,monospace;
+  }
 
-/* ---------- Notice ---------- */
-.notice{max-width:1180px;margin:var(--s4) auto 0;padding:var(--s3) var(--s4);
-  border:1px solid var(--orange);border-left:4px solid var(--orange);
-  background:var(--orange-wash);font-size:14px}
-.notice.err{border-color:var(--red);border-left-color:var(--red);background:var(--red-wash)}
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--body);
+    font-size:15px;
+    line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+  }
+  button{font-family:inherit}
+  a{color:var(--grey)}
 
-/* ---------- Toolbar ---------- */
-.toolbar{position:sticky;top:0;z-index:20;background:var(--paper);border-bottom:1px solid var(--rule)}
-.tbar{max-width:1180px;margin:0 auto;padding:var(--s3) var(--s5);
-  display:flex;gap:var(--s3);align-items:center;flex-wrap:wrap}
-.btn{font-family:var(--display);font-size:11px;font-weight:600;letter-spacing:.13em;
-  text-transform:uppercase;padding:9px 14px;border:1px solid var(--gray);
-  background:transparent;color:var(--gray);cursor:pointer;border-radius:0;
-  transition:background .12s ease,color .12s ease}
-.btn:hover{background:var(--gray);color:#fff}
-.spacer{flex:1}
-.tally{display:flex;gap:var(--s5);font-family:var(--mono);font-size:13px}
-.tally b{font-weight:600;font-size:15px;display:block}
-.tally .t-dupe b{color:var(--orange-deep)}
-.tally .t-out b{color:var(--red)}
-.tally i{font-style:normal;color:var(--ink-soft);font-size:10px;font-family:var(--display);
-  letter-spacing:.14em;text-transform:uppercase;display:block}
+  .eyebrow{
+    font-family:var(--display);
+    text-transform:uppercase;
+    letter-spacing:.09em;
+    font-weight:600;
+    font-size:13px;
+    color:var(--slate);
+  }
+  .mono{font-family:var(--mono);font-size:12px;letter-spacing:.02em}
 
-/* ---------- Log ---------- */
-.log{max-width:1180px;margin:var(--s5) auto;padding:0 var(--s5);
-  display:flex;flex-direction:column;gap:var(--s3)}
-.row{background:var(--card);box-shadow:var(--shadow);border-left:5px solid var(--rule);
-  display:grid;grid-template-columns:58px 1fr 226px;
-  transition:border-color .15s ease,opacity .15s ease}
-.row.is-dupe{border-left-color:var(--orange)}
-.row.is-nomatch{border-left-color:var(--red)}
-.row.is-dropped{opacity:.4}
+  /* ---------- shell ---------- */
+  .topbar{
+    display:flex;align-items:baseline;gap:20px;
+    padding:16px 24px;
+    border-bottom:1px solid var(--rule);
+    background:var(--card);
+    position:sticky;top:0;z-index:20;
+  }
+  .wordmark{
+    font-family:var(--display);
+    font-weight:700;
+    font-size:22px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+  }
+  .wordmark span{color:var(--orange)}
+  .topbar .sub{
+    font-family:var(--display);
+    text-transform:uppercase;
+    letter-spacing:.1em;
+    font-size:14px;
+    color:var(--slate);
+    font-weight:600;
+  }
+  .topbar .spacer{flex:1}
+  .tally{font-family:var(--mono);font-size:12px;color:var(--slate)}
+  .tally b{color:var(--ink);font-weight:500}
+  .linkbtn{
+    background:none;border:none;color:var(--slate);
+    font-size:13px;cursor:pointer;padding:4px 6px;text-decoration:underline;
+  }
+  .linkbtn:hover{color:var(--ink)}
 
-.cell-check{padding:var(--s4) 0 var(--s4) var(--s4);
-  display:flex;flex-direction:column;align-items:center;gap:6px}
-.cell-check input{width:18px;height:18px;accent-color:var(--gray);cursor:pointer;margin:0}
-.linenum{font-family:var(--mono);font-size:11px;color:var(--ink-soft)}
+  .layout{display:grid;grid-template-columns:280px 1fr;min-height:calc(100vh - 57px)}
 
-.cell-main{padding:var(--s4) var(--s4) var(--s4) var(--s3);min-width:0}
-.name{font-family:var(--display);font-weight:600;font-size:17px;margin:0 0 1px}
-.role{font-size:14px;color:var(--ink-soft);margin-bottom:var(--s3)}
-.role b{color:var(--ink);font-weight:600}
-.seniority{font-family:var(--display);font-size:9px;font-weight:600;letter-spacing:.14em;
-  text-transform:uppercase;color:var(--ink-soft);border:1px solid var(--rule);
-  padding:2px 6px;margin-left:6px;white-space:nowrap}
+  /* ---------- board list ---------- */
+  .board{border-right:1px solid var(--rule);background:var(--card)}
+  .board-head{
+    padding:14px 18px 10px;
+    border-bottom:1px solid var(--rule-soft);
+  }
+  .row{
+    display:block;width:100%;text-align:left;
+    background:none;border:0;border-bottom:1px solid var(--rule-soft);
+    padding:13px 18px 13px 16px;cursor:pointer;
+    border-left:3px solid transparent;
+  }
+  .row:hover{background:#FBFAF8}
+  .row.active{background:var(--orange-tint);border-left-color:var(--orange)}
+  .row.done .name{color:var(--slate)}
+  .row-top{display:flex;align-items:baseline;gap:8px}
+  .idx{font-family:var(--mono);font-size:11px;color:var(--slate);min-width:18px}
+  .name{font-weight:600;font-size:14px;letter-spacing:-.005em}
+  .org{
+    font-size:12.5px;color:var(--slate);margin-left:26px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .tick{margin-left:auto;color:var(--green);font-size:13px}
 
-.contact{display:flex;flex-wrap:wrap;gap:var(--s2) var(--s5);margin-bottom:var(--s3)}
-.field{min-width:0}
-.field-k{font-family:var(--display);font-size:9px;font-weight:600;letter-spacing:.16em;
-  text-transform:uppercase;color:var(--ink-soft)}
-.field-v{font-family:var(--mono);font-size:13px;word-break:break-word}
-.field-v.empty{color:var(--ink-faint)}
-.field-v a{text-decoration:none;border-bottom:1px solid #E5C9A5}
-.field-v a:hover{border-bottom-color:var(--orange-deep)}
+  /* ---------- detail ---------- */
+  .detail{padding:26px 30px 80px;max-width:840px}
+  .who h1{
+    font-family:var(--display);
+    font-size:34px;font-weight:700;letter-spacing:.005em;
+    margin:0 0 2px;line-height:1.1;
+  }
+  .who .role{color:var(--grey);font-size:15px}
+  .who .org-line{
+    margin-top:2px;font-size:14px;color:var(--slate);
+  }
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin:14px 0 0}
+  .chip{
+    font-family:var(--mono);font-size:11px;
+    border:1px solid var(--rule);border-radius:2px;
+    padding:3px 7px;color:var(--slate);background:var(--card);
+  }
+  .chip.hot{border-color:var(--orange);color:#8A4A05;background:var(--orange-tint)}
 
-.company{border-top:1px solid var(--rule-soft);padding-top:var(--s3);
-  font-size:13.5px;color:var(--ink-soft)}
-.co-head{display:flex;align-items:baseline;gap:var(--s3);flex-wrap:wrap;margin-bottom:3px}
-.co-name{color:var(--ink);font-weight:600;font-size:14.5px}
-.co-links{display:flex;gap:var(--s3);font-family:var(--display);font-size:10px;
-  font-weight:600;letter-spacing:.12em;text-transform:uppercase}
-.co-links a{text-decoration:none;border-bottom:1px solid #E5C9A5}
-.co-links span{color:var(--ink-faint);border-bottom:1px solid var(--rule-soft)}
-.co-meta{font-family:var(--mono);font-size:12px}
-.signals{display:flex;flex-wrap:wrap;gap:var(--s2) var(--s4);margin-top:var(--s2);
-  padding-top:var(--s2);border-top:1px dotted var(--rule-soft)}
-.sig{font-family:var(--mono);font-size:12px;color:var(--ink)}
-.sig em{font-style:normal;font-family:var(--display);font-size:9px;font-weight:600;
-  letter-spacing:.14em;text-transform:uppercase;color:var(--ink-soft);display:block}
-.desc{margin-top:6px}
-.bio{margin-top:5px;font-size:13px;font-style:italic}
-.kw{margin-top:5px;font-family:var(--mono);font-size:11.5px;color:var(--ink-faint)}
+  .context{
+    margin:20px 0 26px;padding:14px 16px;
+    background:var(--card);border:1px solid var(--rule);
+  }
+  .context p{margin:6px 0 0;font-size:13.5px;color:var(--grey)}
+  .context .none{color:var(--slate);font-style:italic}
 
-.cell-side{padding:var(--s4);border-left:1px solid var(--rule-soft);
-  display:flex;flex-direction:column;gap:var(--s3)}
-.stamp{font-family:var(--display);font-size:10px;font-weight:700;letter-spacing:.14em;
-  text-transform:uppercase;border:2px solid currentColor;padding:5px 8px;align-self:flex-start}
-.stamp.dupe{color:var(--orange-deep)}
-.stamp.nomatch{color:var(--red)}
-.terr{font-family:var(--display);font-size:10px;font-weight:600;letter-spacing:.12em;
-  text-transform:uppercase;padding:5px 8px;align-self:flex-start;
-  background:#F2F1ED;color:var(--ink-soft);border:1px solid var(--rule)}
-.terr.out{background:var(--red-wash);color:var(--red);border-color:var(--red)}
-select{width:100%;font-family:var(--body);font-size:13px;padding:7px 8px;
-  border:1px solid var(--rule);background:#fff;color:var(--ink);border-radius:0;cursor:pointer}
-select:disabled{opacity:.5;cursor:not-allowed}
-.side-k{font-family:var(--display);font-size:9px;font-weight:600;letter-spacing:.16em;
-  text-transform:uppercase;color:var(--ink-soft);margin-bottom:4px}
+  .options-head{
+    display:flex;align-items:baseline;gap:10px;
+    margin:0 0 12px;padding-bottom:8px;
+    border-bottom:2px solid var(--ink);
+  }
 
-/* ---------- Approval bar ---------- */
-.approve{position:fixed;left:0;right:0;bottom:0;z-index:30;
-  background:var(--gray);border-top:3px solid var(--orange)}
-.ap{max-width:1180px;margin:0 auto;padding:var(--s4) var(--s5);
-  display:flex;align-items:center;gap:var(--s4);flex-wrap:wrap}
-.ap-count{color:#fff;font-family:var(--mono);font-size:14px}
-.ap-count b{font-size:20px;font-weight:600}
-.ap-note{color:rgba(255,255,255,.6);font-size:12.5px}
-.btn-send{margin-left:auto;font-family:var(--display);font-size:12px;font-weight:700;
-  letter-spacing:.14em;text-transform:uppercase;padding:13px 26px;border:0;
-  background:var(--orange);color:#231301;cursor:pointer;border-radius:0;
-  transition:background .12s ease}
-.btn-send:hover{background:#FF9A38}
-.btn-send[disabled]{background:#8A8A8A;color:#D8D8D8;cursor:not-allowed}
+  /* ---------- option cards ---------- */
+  .opt{
+    background:var(--card);
+    border:1px solid var(--rule);
+    border-left:3px solid var(--rule);
+    margin-bottom:10px;
+  }
+  .opt.open{border-left-color:var(--grey)}
+  .opt.chosen{border-left-color:var(--orange);box-shadow:0 1px 0 rgba(0,0,0,.04)}
+  .opt-head{
+    display:flex;align-items:center;gap:10px;width:100%;
+    background:none;border:0;padding:12px 14px;cursor:pointer;text-align:left;
+  }
+  .opt-n{font-family:var(--mono);font-size:11px;color:var(--slate)}
+  .opt-label{
+    font-family:var(--display);text-transform:uppercase;
+    letter-spacing:.08em;font-weight:600;font-size:13px;
+  }
+  .opt-subject{
+    flex:1;font-size:13px;color:var(--slate);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .opt-body{padding:0 14px 14px;border-top:1px solid var(--rule-soft)}
+  .field{margin-top:12px}
+  .field label{
+    display:block;font-family:var(--display);text-transform:uppercase;
+    letter-spacing:.08em;font-size:12px;color:var(--slate);
+    font-weight:600;margin-bottom:4px;
+  }
+  input[type=text],textarea{
+    width:100%;font-family:var(--body);font-size:14px;line-height:1.6;
+    color:var(--ink);background:var(--paper);
+    border:1px solid var(--rule);border-radius:0;
+    padding:9px 11px;resize:vertical;
+  }
+  input[type=text]:focus,textarea[type]:focus,textarea:focus{
+    outline:2px solid var(--orange);outline-offset:-1px;border-color:var(--orange);
+  }
+  textarea{min-height:190px}
+  .opt-actions{display:flex;align-items:center;gap:12px;margin-top:14px}
+  .btn{
+    font-family:var(--display);text-transform:uppercase;letter-spacing:.09em;
+    font-weight:600;font-size:14px;
+    background:var(--ink);color:#fff;border:0;
+    padding:10px 20px;cursor:pointer;
+  }
+  .btn:hover{background:#000}
+  .btn[disabled]{opacity:.45;cursor:not-allowed}
+  .btn.ghost{background:none;color:var(--slate);border:1px solid var(--rule)}
+  .btn.ghost:hover{background:var(--paper);color:var(--ink)}
+  .hint{font-size:12.5px;color:var(--slate)}
+  .hint.err{color:var(--red)}
 
-@media (max-width:860px){
-  .tb-grid{grid-template-columns:repeat(2,1fr)}
-  .tb-cell:nth-child(2){border-right:0}
-  .row{grid-template-columns:46px 1fr}
-  .cell-side{grid-column:1 / -1;border-left:0;border-top:1px solid var(--rule-soft);
-    flex-direction:row;align-items:flex-end;gap:var(--s3);flex-wrap:wrap}
-  .cell-side .lbl-wrap{flex:1;min-width:150px}
-  .tally{gap:var(--s4);width:100%;order:3}
-}
-@media (prefers-reduced-motion:reduce){*{transition:none !important}}
+  .done-banner{
+    background:var(--card);border:1px solid var(--rule);
+    border-left:3px solid var(--green);
+    padding:16px 18px;margin-bottom:18px;
+  }
+  .done-banner .eyebrow{color:var(--green)}
+  .done-banner p{margin:6px 0 0;font-size:14px;color:var(--grey)}
+
+  /* ---------- states ---------- */
+  .center{
+    min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;
+  }
+  .panel{
+    width:100%;max-width:360px;background:var(--card);
+    border:1px solid var(--rule);padding:30px 28px;
+  }
+  .panel .wordmark{font-size:26px;display:block;margin-bottom:4px}
+  .panel .eyebrow{margin-bottom:22px;display:block}
+  .panel .field{margin-top:14px}
+  .panel .btn{width:100%;margin-top:20px}
+  .empty{padding:60px 30px;max-width:520px}
+  .empty h2{font-family:var(--display);font-size:26px;margin:0 0 6px;font-weight:700}
+  .empty p{color:var(--grey);font-size:14.5px;margin:0 0 4px}
+
+  @media (max-width:820px){
+    .layout{grid-template-columns:1fr}
+    .board{border-right:0;border-bottom:1px solid var(--rule)}
+    .detail{padding:20px 18px 60px}
+  }
+  @media (prefers-reduced-motion:no-preference){
+    .opt{transition:border-left-color .18s ease}
+    .row{transition:background .12s ease}
+  }
 </style>
 </head>
 <body>
 
-<header class="titleblock">
-  <div class="tb-top">
-    <svg class="mark" viewBox="0 0 253 253" aria-hidden="true">
-      <rect x="191" y="0"   width="62" height="253"/>
-      <rect x="96"  y="94"  width="61" height="61"/>
-      <rect x="0"   y="192" width="61" height="61"/>
-      <rect x="96"  y="192" width="61" height="61"/>
-    </svg>
-    <div class="wordmark">Haggerty</div>
-    <div class="tb-title">Lead Review</div>
-  </div>
-  <div class="tb-grid">
-    <div class="tb-cell"><div class="tb-key">Batch</div><div class="tb-val" id="m-batch">—</div></div>
-    <div class="tb-cell"><div class="tb-key">Enriched</div><div class="tb-val" id="m-date">—</div></div>
-    <div class="tb-cell"><div class="tb-key">Leads</div><div class="tb-val" id="m-count">—</div></div>
-    <div class="tb-cell"><div class="tb-key">Status</div><div class="tb-val" id="m-status">Loading</div></div>
-  </div>
-</header>
+<div id="app"></div>
 
-<div id="notice-slot"></div>
+<script type="module">
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 
-<div class="toolbar">
-  <div class="tbar">
-    <button class="btn" id="b-all">Keep all</button>
-    <button class="btn" id="b-none">Remove all</button>
-    <button class="btn" id="b-dupes">Remove leads in Pipedrive</button>
-    <button class="btn" id="b-out">Remove out of territory</button>
-    <div class="spacer"></div>
-    <div class="tally" aria-live="polite">
-      <div><i>Keeping</i><b id="t-keep">0</b></div>
-      <div><i>Removing</i><b id="t-drop">0</b></div>
-      <div class="t-dupe"><i>In Pipedrive</i><b id="t-dupe">0</b></div>
-      <div class="t-out"><i>Out of area</i><b id="t-out">0</b></div>
-    </div>
-  </div>
-</div>
+const SUPABASE_URL  = 'https://ekatzukprjpisdiwubjq.supabase.co';
+const SUPABASE_KEY  = 'sb_publishable_bdyRB7Mx0BKzNj1EcYlRCg_8JLDXEIL';
+const ACTION_URL    = 'https://haggertybuilds.app.n8n.cloud/webhook/haggerty-outreach-action';
 
-<main class="log" id="log"></main>
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+const app = document.getElementById('app');
 
-<div class="approve">
-  <div class="ap">
-    <div class="ap-count"><b id="ap-n">0</b> leads ready</div>
-    <div class="ap-note" id="ap-note">Review each lead, then send.</div>
-    <button class="btn-send" id="b-send" disabled>Send to Pipedrive</button>
-  </div>
-</div>
-
-<script>
-const SAMPLE = {
-  batchId:"SAMPLE", generatedAt:new Date().toISOString(),
-  leads:[
-    {fullName:"Dana Whitfield",title:"Director of Facilities",seniority:"director",
-     email:"d.whitfield@valleycoldchain.com",officePhone:"(209) 555-0182",
-     linkedinUrl:"https://www.linkedin.com/in/example",
-     bio:"Facilities leader, cold storage and distribution | Director of Facilities",
-     company:"Valley Cold Chain",companyIndustry:"warehousing and storage",companySize:420,
-     companyWebsite:"https://valleycoldchain.example",
-     companyLinkedin:"https://www.linkedin.com/company/example",
-     companyHQ:"Stockton, CA, United States",territory:"Central Valley",
-     companyRevenue:"$85M",companyFounded:1998,companyLocations:6,
-     companyKeywords:"cold storage, 3PL, distribution, food logistics",
-     companyDescription:"Temperature-controlled warehousing across the Central Valley.",
-     suggestedLabel:"Industrial",matched:true,isDuplicate:false},
-    {fullName:"Marco Benitez",title:"Fixed Operations Director",seniority:"director",
-     email:"mbenitez@benitezautogroup.com",officePhone:"(916) 555-0143",linkedinUrl:"",
-     bio:"Multi-rooftop dealer operations | Fixed Operations Director",
-     company:"Benitez Auto Group",companyIndustry:"retail motor vehicles",companySize:180,
-     companyWebsite:"https://benitezauto.example",
-     companyLinkedin:"https://www.linkedin.com/company/example",
-     companyHQ:"Sacramento, CA, United States",territory:"Sacramento / North",
-     companyRevenue:"$210M",companyFounded:1987,companyLocations:6,
-     companyKeywords:"dealership, service center, collision",
-     companyDescription:"Six-rooftop dealership group serving greater Sacramento.",
-     suggestedLabel:"Automotive",matched:true,isDuplicate:false},
-    {fullName:"Priya Raghavan",title:"Director of Capital Projects",seniority:"director",
-     email:"praghavan@northgateresidential.com",officePhone:"(510) 555-0119",
-     linkedinUrl:"https://www.linkedin.com/in/example",
-     bio:"Value-add multifamily renovation programs | Director of Capital Projects",
-     company:"Northgate Residential",companyIndustry:"real estate",companySize:260,
-     companyWebsite:"https://northgateres.example",
-     companyLinkedin:"https://www.linkedin.com/company/example",
-     companyHQ:"Oakland, CA, United States",territory:"Bay Area",
-     companyRevenue:"$140M",companyFounded:2004,companyLocations:31,
-     companyKeywords:"multifamily, value add, workforce housing",
-     companyDescription:"Owner-operator of workforce housing across Northern California.",
-     suggestedLabel:"Property Manager",matched:true,isDuplicate:true},
-    {fullName:"Warren Ochoa",title:"Plant Manager",seniority:"",email:"",officePhone:"",
-     linkedinUrl:"",bio:"",company:"Delta Packaging Partners",companyIndustry:"",
-     companySize:"",companyWebsite:"",companyLinkedin:"",companyHQ:"",territory:"",
-     companyRevenue:"",companyFounded:"",companyLocations:"",companyKeywords:"",
-     companyDescription:"",suggestedLabel:"",matched:false,isDuplicate:false},
-    {fullName:"Sheila Kramm",title:"Director of Plant Operations",seniority:"director",
-     email:"skramm@riverbendhealth.org",officePhone:"(209) 555-0166",
-     linkedinUrl:"https://www.linkedin.com/in/example",
-     bio:"Hospital facilities and capital planning | Director of Plant Operations",
-     company:"Riverbend Health",companyIndustry:"hospitals and health care",companySize:1400,
-     companyWebsite:"https://riverbendhealth.example",
-     companyLinkedin:"https://www.linkedin.com/company/example",
-     companyHQ:"Modesto, CA, United States",territory:"Central Valley",
-     companyRevenue:"$620M",companyFounded:1961,companyLocations:4,
-     companyKeywords:"health system, acute care, outpatient",
-     companyDescription:"Regional health system with four campuses in the Central Valley.",
-     suggestedLabel:"",matched:true,isDuplicate:false},
-    {fullName:"Curtis Alderman",title:"VP of Real Estate",seniority:"vp",
-     email:"calderman@meridianretail.com",officePhone:"(602) 555-0177",
-     linkedinUrl:"https://www.linkedin.com/in/example",
-     bio:"Portfolio strategy and development | VP of Real Estate",
-     company:"Meridian Retail Partners",companyIndustry:"real estate",companySize:340,
-     companyWebsite:"https://meridianretail.example",
-     companyLinkedin:"https://www.linkedin.com/company/example",
-     companyHQ:"Phoenix, AZ, United States",territory:"Outside territory",
-     companyRevenue:"$300M",companyFounded:1995,companyLocations:52,
-     companyKeywords:"retail centers, grocery anchored",
-     companyDescription:"Owner of grocery-anchored retail centers across the Southwest.",
-     suggestedLabel:"Property Manager",matched:true,isDuplicate:false}
-  ]
+const LABELS = {
+  direct_bid:       'Direct bid request',
+  routing_question: 'Who handles GC selection',
+  project_anchor:   'Anchored to past work',
+  local_proximity:  'Local angle',
+  plain_intro:      'Introduction only'
 };
 
-let LEADS=[], isSample=false;
-const $=id=>document.getElementById(id);
-const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const has=v=>v!==undefined&&v!==null&&String(v).trim()!=="";
-const notice=(h,e)=>{$("notice-slot").innerHTML='<div class="notice'+(e?" err":"")+'">'+h+'</div>';};
-const isOut=l=>String(l.territory||"")==="Outside territory";
+const state = { board: [], drafts: {}, activeId: null, open: {}, busy: false, err: '' };
 
-function normalize(p){
-  if(Array.isArray(p)) return {batchId:"—",generatedAt:null,leads:p};
-  if(p&&Array.isArray(p.leads)) return p;
-  if(p&&p.data) return normalize(p.data);
-  if(Array.isArray(p?.[0]?.leads)) return p[0];
-  return {batchId:"—",generatedAt:null,leads:[]};
+const esc = s => String(s ?? '')
+  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  .replace(/"/g,'&quot;');
+
+const today = () => {
+  const d = new Date();
+  return [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-');
+};
+
+const prettyDate = () =>
+  new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+
+// Strip the signature and HTML tags so Pat edits prose, not markup.
+function toPlain(html){
+  if(!html) return '';
+  let s = String(html);
+  const cut = s.indexOf('<table');
+  if(cut > -1) s = s.slice(0, cut);
+  return s
+    .replace(/<\/p>/gi,'\n\n')
+    .replace(/<br\s*\/?>/gi,'\n')
+    .replace(/<[^>]+>/g,'')
+    .replace(/&nbsp;/g,' ')
+    .replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')
+    .replace(/\n{3,}/g,'\n\n')
+    .trim();
 }
+
+function toHtml(plain){
+  const paras = String(plain||'').split(/\n\s*\n/).map(p=>p.trim()).filter(Boolean);
+  return paras.map(p =>
+    '<p style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222;line-height:22px;margin:0 0 14px 0;">'
+    + esc(p).replace(/\n/g,'<br>') + '</p>'
+  ).join('');
+}
+
+/* ---------------- auth ---------------- */
+
+function renderLogin(msg){
+  app.innerHTML = `
+    <div class="center"><form class="panel" id="loginForm">
+      <span class="wordmark">HAGGERT<span>Y</span></span>
+      <span class="eyebrow">Outreach board</span>
+      <div class="field">
+        <label for="em">Email</label>
+        <input type="text" id="em" autocomplete="username" />
+      </div>
+      <div class="field">
+        <label for="pw">Password</label>
+        <input type="password" id="pw" autocomplete="current-password"
+               style="width:100%;font-family:var(--body);font-size:14px;padding:9px 11px;border:1px solid var(--rule);background:var(--paper)" />
+      </div>
+      ${msg ? `<p class="hint err" style="margin-top:14px">${esc(msg)}</p>` : ''}
+      <button class="btn" type="submit">Sign in</button>
+    </form></div>`;
+  document.getElementById('loginForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const email = document.getElementById('em').value.trim();
+    const password = document.getElementById('pw').value;
+    const { error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) return renderLogin(error.message);
+    boot();
+  });
+}
+
+/* ---------------- data ---------------- */
 
 async function load(){
-  let payload=null;
-  try{
-    const r=await fetch(CONFIG.BATCH_URL);
-    if(!r.ok) throw new Error("Server returned "+r.status);
-    payload=await r.json();
-  }catch(err){
-    isSample=true;
-    notice('<strong>Showing sample data.</strong> The live batch could not be loaded ('+
-      esc(err.message)+'). Publish both n8n workflows and run an export, then reload.',true);
-    payload=SAMPLE;
+  const { data: board, error } = await sb
+    .from('v_today_board')
+    .select('*')
+    .eq('queue_date', today())
+    .order('vertical_order')
+    .order('slot');
+  if (error) throw error;
+
+  state.board = board || [];
+  state.drafts = {};
+
+  if (state.board.length){
+    const ids = state.board.map(r => r.queue_id);
+    const { data: drafts, error: e2 } = await sb
+      .from('email_drafts')
+      .select('*')
+      .in('queue_id', ids)
+      .order('variant_number');
+    if (e2) throw e2;
+    for (const d of (drafts||[])){
+      (state.drafts[d.queue_id] ||= []).push(d);
+    }
   }
-  const b=normalize(payload);
-  if(!isSample&&b.leads.length===0)
-    notice('<strong>No leads in the current batch.</strong> Drop an Evaboot export in the WorkFlow Leads folder, then reload once the run finishes.');
 
-  LEADS=b.leads.map((l,i)=>({...l,_i:i,_keep:!l.isDuplicate,_label:l.suggestedLabel||""}));
-  $("m-batch").textContent=b.batchId||"—";
-  $("m-date").textContent=b.generatedAt
-    ? new Date(b.generatedAt).toLocaleDateString("en-US",{month:"2-digit",day:"2-digit",year:"2-digit"}) : "—";
-  $("m-count").textContent=LEADS.length;
-  $("m-status").textContent=isSample?"Sample":"Pending";
-  render();
+  if (!state.activeId || !state.board.some(r => r.queue_id === state.activeId)){
+    const next = state.board.find(r => !r.handled) || state.board[0];
+    state.activeId = next ? next.queue_id : null;
+    state.open = {};
+    const first = state.activeId && state.drafts[state.activeId]?.[0];
+    if (first) state.open[first.id] = true;
+  }
 }
 
-const labelOptions=sel=>['<option value="">No label</option>']
-  .concat(CONFIG.LABELS.map(l=>'<option value="'+esc(l)+'"'+(l===sel?" selected":"")+'>'+esc(l)+'</option>')).join("");
-
-function field(k,v,href){
-  let val=has(v)?esc(v):"not found";
-  if(has(v)&&href) val='<a href="'+esc(href)+'" target="_blank" rel="noopener">'+val+'</a>';
-  return '<div class="field"><div class="field-k">'+esc(k)+'</div>'+
-         '<div class="field-v'+(has(v)?"":" empty")+'">'+val+'</div></div>';
-}
-function sig(k,v,suffix){
-  if(!has(v)) return "";
-  return '<div class="sig"><em>'+esc(k)+'</em>'+esc(v)+(suffix?" "+esc(suffix):"")+'</div>';
-}
+/* ---------------- render ---------------- */
 
 function render(){
-  $("log").innerHTML=LEADS.map(l=>{
-    const cls=["row"];
-    if(l.isDuplicate) cls.push("is-dupe");
-    else if(l.matched===false) cls.push("is-nomatch");
-    if(!l._keep) cls.push("is-dropped");
+  const done = state.board.filter(r => r.handled).length;
+  const total = state.board.length;
 
-    let stamp="";
-    if(l.isDuplicate) stamp='<div class="stamp dupe">Already in Pipedrive</div>';
-    else if(l.matched===false) stamp='<div class="stamp nomatch">No Apollo match</div>';
-
-    const terr=has(l.territory)
-      ? '<div class="terr'+(isOut(l)?" out":"")+'">'+esc(l.territory)+'</div>' : "";
-
-    const meta=[l.companyIndustry, has(l.companySize)?l.companySize+" employees":"", l.companyHQ]
-      .filter(Boolean).map(esc).join(" &middot; ");
-
-    const coLinks=
-      (has(l.companyWebsite)
-        ? '<a href="'+esc(l.companyWebsite)+'" target="_blank" rel="noopener">Website</a>'
-        : '<span>No website</span>')+
-      (has(l.companyLinkedin)
-        ? '<a href="'+esc(l.companyLinkedin)+'" target="_blank" rel="noopener">Company LinkedIn</a>'
-        : '<span>No company LinkedIn</span>');
-
-    const signals=[
-      sig("Revenue", l.companyRevenue),
-      sig("Founded", l.companyFounded),
-      sig("Locations", l.companyLocations)
-    ].join("");
-
-    return '<article class="'+cls.join(" ")+'">'+
-      '<div class="cell-check">'+
-        '<input type="checkbox" data-i="'+l._i+'"'+(l._keep?" checked":"")+
-          ' aria-label="Keep '+esc(l.fullName||"lead")+'">'+
-        '<span class="linenum">'+String(l._i+1).padStart(3,"0")+'</span>'+
-      '</div>'+
-      '<div class="cell-main">'+
-        '<h3 class="name">'+esc(l.fullName||"Name not found")+
-          (has(l.seniority)?'<span class="seniority">'+esc(l.seniority)+'</span>':'')+'</h3>'+
-        '<div class="role">'+esc(l.title||"Title not found")+
-          (has(l.company)?' at <b>'+esc(l.company)+'</b>':'')+'</div>'+
-        '<div class="contact">'+
-          field("Email", l.email, has(l.email)?"mailto:"+l.email:null)+
-          field("Office phone", l.officePhone)+
-          (has(l.mobilePhone)?field("Mobile", l.mobilePhone):"")+
-          field("LinkedIn", has(l.linkedinUrl)?"View profile":"", l.linkedinUrl||null)+
-        '</div>'+
-        '<div class="company">'+
-          '<div class="co-head">'+
-            '<span class="co-name">'+esc(l.company||"Company not found")+'</span>'+
-            '<span class="co-links">'+coLinks+'</span>'+
-          '</div>'+
-          (meta?'<div class="co-meta">'+meta+'</div>':'')+
-          (signals?'<div class="signals">'+signals+'</div>':'')+
-          (has(l.companyDescription)?'<div class="desc">'+esc(l.companyDescription)+'</div>':'')+
-          (has(l.bio)?'<div class="bio">'+esc(l.bio)+'</div>':'')+
-          (has(l.companyKeywords)?'<div class="kw">'+esc(l.companyKeywords)+'</div>':'')+
-        '</div>'+
-      '</div>'+
-      '<div class="cell-side">'+
-        stamp+terr+
-        '<div class="lbl-wrap"><div class="side-k">Pipedrive label</div>'+
-          '<select data-label="'+l._i+'"'+(l._keep?"":" disabled")+'>'+labelOptions(l._label)+'</select>'+
-        '</div>'+
-      '</div>'+
-    '</article>';
-  }).join("");
-  tally();
-}
-
-function tally(){
-  const keep=LEADS.filter(l=>l._keep).length;
-  const dupe=LEADS.filter(l=>l.isDuplicate).length;
-  const out=LEADS.filter(isOut).length;
-  $("t-keep").textContent=keep;
-  $("t-drop").textContent=LEADS.length-keep;
-  $("t-dupe").textContent=dupe;
-  $("t-out").textContent=out;
-  $("ap-n").textContent=keep;
-  $("b-send").disabled=keep===0||isSample;
-  $("ap-note").textContent=isSample
-    ? "Sending is off while sample data is showing."
-    : (dupe>0 ? dupe+" lead"+(dupe===1?" is":"s are")+" already in Pipedrive and will be skipped."
-              : "Review each lead, then send.");
-}
-
-document.addEventListener("change",e=>{
-  const cb=e.target.closest('input[type="checkbox"][data-i]');
-  if(cb){
-    LEADS[+cb.dataset.i]._keep=cb.checked;
-    const row=cb.closest(".row");
-    row.classList.toggle("is-dropped",!cb.checked);
-    const sel=row.querySelector("select[data-label]");
-    if(sel) sel.disabled=!cb.checked;
-    tally(); return;
+  if (!total){
+    app.innerHTML = topbar(0,0) + `
+      <div class="empty">
+        <h2>Nothing queued for today</h2>
+        <p>The board fills at 6:15am on weekdays, after the overnight queue picks who to approach.</p>
+        <p class="hint" style="margin-top:10px">If it is a weekday morning and this is still empty, check the queue builder and draft generator in n8n.</p>
+      </div>`;
+    wireTop();
+    return;
   }
-  const sl=e.target.closest("select[data-label]");
-  if(sl) LEADS[+sl.dataset.label]._label=sl.value;
-});
 
-$("b-all").onclick  =()=>{LEADS.forEach(l=>l._keep=true);render();};
-$("b-none").onclick =()=>{LEADS.forEach(l=>l._keep=false);render();};
-$("b-dupes").onclick=()=>{LEADS.forEach(l=>{if(l.isDuplicate)l._keep=false;});render();};
-$("b-out").onclick  =()=>{LEADS.forEach(l=>{if(isOut(l))l._keep=false;});render();};
+  app.innerHTML = topbar(done, total) + `
+    <div class="layout">
+      <nav class="board">
+        <div class="board-head"><span class="eyebrow">${done} of ${total} cleared</span></div>
+        ${state.board.map(rowHtml).join('')}
+      </nav>
+      <main class="detail">${detailHtml()}</main>
+    </div>`;
 
-$("b-send").onclick=async()=>{
-  const btn=$("b-send"), kept=LEADS.filter(l=>l._keep);
-  if(!kept.length) return;
-  btn.disabled=true; btn.textContent="Sending…";
-  const strip=l=>{const o={...l};o.suggestedLabel=l._label;delete o._i;delete o._keep;delete o._label;return o;};
-  try{
-    const r=await fetch(CONFIG.APPROVE_URL,{
-      method:"POST",
-      body:JSON.stringify({batchId:$("m-batch").textContent,
-        leads:kept.map(strip),removed:LEADS.filter(l=>!l._keep).map(strip)})
+  wireTop();
+  document.querySelectorAll('[data-row]').forEach(el =>
+    el.addEventListener('click', () => {
+      state.activeId = el.dataset.row;
+      state.open = {};
+      const first = state.drafts[state.activeId]?.[0];
+      if (first) state.open[first.id] = true;
+      state.err = '';
+      render();
+    }));
+  document.querySelectorAll('[data-toggle]').forEach(el =>
+    el.addEventListener('click', () => {
+      const id = el.dataset.toggle;
+      state.open[id] = !state.open[id];
+      render();
+    }));
+  document.querySelectorAll('[data-use]').forEach(el =>
+    el.addEventListener('click', () => useDraft(el.dataset.use)));
+}
+
+function topbar(done, total){
+  return `<header class="topbar">
+    <span class="wordmark">HAGGERT<span>Y</span></span>
+    <span class="sub">Outreach board</span>
+    <span class="spacer"></span>
+    <span class="tally">${esc(prettyDate())}</span>
+    ${total ? `<span class="tally"><b>${done}</b> / ${total} cleared</span>` : ''}
+    <button class="linkbtn" id="signout">Sign out</button>
+  </header>`;
+}
+
+function wireTop(){
+  const b = document.getElementById('signout');
+  if (b) b.addEventListener('click', async () => { await sb.auth.signOut(); renderLogin(); });
+}
+
+function rowHtml(r, i){
+  const active = r.queue_id === state.activeId;
+  return `<button class="row ${active?'active':''} ${r.handled?'done':''}" data-row="${r.queue_id}">
+    <span class="row-top">
+      <span class="idx">${String(i+1).padStart(2,'0')}</span>
+      <span class="name">${esc(r.full_name || r.email)}</span>
+      ${r.handled ? '<span class="tick">&#10003;</span>' : ''}
+    </span>
+    <span class="org">${esc(r.company_name || r.vertical)}</span>
+  </button>`;
+}
+
+function detailHtml(){
+  const r = state.board.find(x => x.queue_id === state.activeId);
+  if (!r) return '';
+  const drafts = state.drafts[r.queue_id] || [];
+
+  const chips = [
+    r.vertical && `<span class="chip">${esc(r.vertical)}</span>`,
+    r.territory && `<span class="chip">${esc(r.territory)}</span>`,
+    r.company_city && `<span class="chip">${esc(r.company_city)}${r.company_state?', '+esc(r.company_state):''}</span>`,
+    r.employee_count && `<span class="chip">${esc(r.employee_count)} staff</span>`,
+    r.fit >= 60 && `<span class="chip hot">Strong fit ${esc(r.fit)}</span>`,
+    r.linkedin_url && `<a class="chip" href="${esc(r.linkedin_url)}" target="_blank" rel="noopener">LinkedIn</a>`,
+    r.company_website && `<a class="chip" href="${esc(r.company_website)}" target="_blank" rel="noopener">Website</a>`
+  ].filter(Boolean).join('');
+
+  const ctx = r.company_description || r.company_keywords || r.company_industry;
+
+  const head = `
+    <div class="who">
+      <h1>${esc(r.full_name || 'Unknown contact')}</h1>
+      <div class="role">${esc(r.title || 'No title on file')}</div>
+      <div class="org-line">${esc(r.company_name || '')} &middot; <span class="mono">${esc(r.email)}</span></div>
+      <div class="chips">${chips}</div>
+    </div>
+    <div class="context">
+      <span class="eyebrow">What we know</span>
+      ${ctx ? `
+        ${r.company_industry ? `<p><b>Industry</b> ${esc(r.company_industry)}</p>` : ''}
+        ${r.company_description ? `<p>${esc(r.company_description)}</p>` : ''}
+        ${r.company_keywords ? `<p class="mono" style="color:var(--slate)">${esc(r.company_keywords)}</p>` : ''}
+      ` : `<p class="none">No enrichment on file. The drafts below make no claims about this company.</p>`}
+    </div>`;
+
+  if (r.handled){
+    return head + `
+      <div class="done-banner">
+        <span class="eyebrow">Cleared</span>
+        <p>The draft is waiting in your Outlook drafts folder. Review it there and send when you are ready.</p>
+        ${r.draft_web_link ? `<p style="margin-top:10px"><a href="${esc(r.draft_web_link)}" target="_blank" rel="noopener"><b>Open the draft in Outlook</b></a></p>` : ''}
+      </div>`;
+  }
+
+  if (!drafts.length){
+    return head + `<div class="context"><p class="none">No drafts generated for this contact yet.</p></div>`;
+  }
+
+  return head + `
+    <div class="options-head">
+      <span class="eyebrow" style="color:var(--ink)">Five approaches</span>
+      <span class="hint">Pick one, edit it, send it to your drafts</span>
+    </div>
+    ${drafts.map(optHtml).join('')}
+    ${state.err ? `<p class="hint err">${esc(state.err)}</p>` : ''}`;
+}
+
+function optHtml(d, i){
+  const open = !!state.open[d.id];
+  const subject = d.edited_subject || d.subject || '';
+  const bodyPlain = toPlain(d.edited_body || d.body_html);
+  return `<section class="opt ${open?'open':''}">
+    <button class="opt-head" data-toggle="${d.id}">
+      <span class="opt-n">${String(i+1).padStart(2,'0')}</span>
+      <span class="opt-label">${esc(LABELS[d.variant_type] || d.variant_type)}</span>
+      <span class="opt-subject">${esc(subject)}</span>
+    </button>
+    ${open ? `
+    <div class="opt-body">
+      <div class="field">
+        <label for="s-${d.id}">Subject</label>
+        <input type="text" id="s-${d.id}" value="${esc(subject)}" />
+      </div>
+      <div class="field">
+        <label for="b-${d.id}">Message</label>
+        <textarea id="b-${d.id}">${esc(bodyPlain)}</textarea>
+      </div>
+      <div class="opt-actions">
+        <button class="btn" data-use="${d.id}" ${state.busy?'disabled':''}>
+          ${state.busy ? 'Sending&hellip;' : 'Send to my drafts'}
+        </button>
+        <span class="hint">Greeting and signature are added automatically.</span>
+      </div>
+    </div>` : ''}
+  </section>`;
+}
+
+/* ---------------- action ---------------- */
+
+async function useDraft(draftId){
+  if (state.busy) return;
+  const r = state.board.find(x => x.queue_id === state.activeId);
+  const d = (state.drafts[r.queue_id] || []).find(x => x.id === draftId);
+  if (!r || !d) return;
+
+  const subject = document.getElementById('s-'+draftId).value.trim();
+  const bodyText = document.getElementById('b-'+draftId).value.trim();
+  if (!subject || !bodyText){
+    state.err = 'Add a subject and a message before sending.';
+    return render();
+  }
+
+  state.busy = true; state.err = ''; render();
+
+  try {
+    const greeting = '<p style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222;line-height:22px;margin:0 0 14px 0;">Hi '
+      + esc(r.first_name || (r.full_name||'').split(' ')[0]) + ',</p>';
+    const signoff = '<p style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222;line-height:22px;margin:0 0 4px 0;">Pat</p>';
+    const sigStart = (d.body_html || '').indexOf('<table');
+    const signature = sigStart > -1 ? d.body_html.slice(sigStart) : '';
+
+    const finalHtml = greeting + toHtml(bodyText) + signoff + signature;
+
+    const { error: upErr } = await sb.from('email_drafts')
+      .update({ edited_subject: subject, edited_body: finalHtml })
+      .eq('id', draftId);
+    if (upErr) throw upErr;
+
+    const res = await fetch(ACTION_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ queue_id: r.queue_id, draft_id: draftId })
     });
-    if(!r.ok) throw new Error("Server returned "+r.status);
-    const res=await r.json().catch(()=>({}));
-    const made=Array.isArray(res)?res.length:(res.created??kept.length);
-    $("m-status").textContent="Sent";
-    notice('<strong>'+made+' lead'+(made===1?"":"s")+' sent to Pipedrive.</strong> '+
-      'They are in HAGGERTY Lead flow at the Opportunity stage, owned by Pat.');
-    btn.textContent="Sent";
-    window.scrollTo({top:0,behavior:"smooth"});
-  }catch(err){
-    notice('<strong>Nothing was sent.</strong> '+esc(err.message)+
-      '. Check that both workflows are published, then try again.',true);
-    btn.disabled=false; btn.textContent="Send to Pipedrive";
-    window.scrollTo({top:0,behavior:"smooth"});
-  }
-};
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok || !out.ok) throw new Error(out.error || 'The draft could not be created. Try again.');
 
-load();
+    await load();
+  } catch (err){
+    state.err = err.message || String(err);
+  } finally {
+    state.busy = false;
+    render();
+  }
+}
+
+/* ---------------- boot ---------------- */
+
+async function boot(){
+  const { data:{ session } } = await sb.auth.getSession();
+  if (!session) return renderLogin();
+  try { await load(); render(); }
+  catch (e){
+    app.innerHTML = `<div class="empty"><h2>Could not load the board</h2>
+      <p>${esc(e.message || e)}</p>
+      <p class="hint" style="margin-top:12px">If this mentions permissions, your account may not have access yet.</p></div>`;
+  }
+}
+
+boot();
 </script>
 </body>
 </html>
