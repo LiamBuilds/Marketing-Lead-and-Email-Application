@@ -150,6 +150,30 @@
   .state.bounced{color:var(--red);border-color:var(--red)}
   .muted{color:var(--slate)}
 
+  /* week ahead */
+  .day{border-top:1px solid var(--rule);background:var(--card)}
+  .day:first-child{border-top:0}
+  .day-head{display:flex;align-items:baseline;gap:10px;padding:9px 14px 7px;
+            background:#F6F4F1;border-bottom:1px solid var(--rule-soft)}
+  .day-head .d{font-family:var(--display);text-transform:uppercase;
+               letter-spacing:.08em;font-weight:700;font-size:13px}
+  .day-head .n{font-family:var(--mono);font-size:11px;color:var(--slate)}
+  .day-head.today .d{color:var(--orange)}
+  .ev{display:flex;align-items:baseline;gap:12px;padding:9px 14px;
+      border-bottom:1px solid var(--rule-soft)}
+  .ev:last-child{border-bottom:0}
+  .ev .t{font-family:var(--mono);font-size:12px;color:var(--slate);
+         min-width:64px;flex-shrink:0}
+  .ev .s{flex:1;font-size:13.5px}
+  .ev .s em{font-style:normal;color:var(--slate);font-size:12.5px}
+  .kind{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;
+        letter-spacing:.05em;padding:2px 6px;border:1px solid var(--rule);
+        color:var(--slate);flex-shrink:0}
+  .kind.meeting{border-color:var(--orange);color:#8A4A05;background:var(--orange-tint)}
+  .kind.networking{border-color:var(--green);color:var(--green)}
+  .kind.site_visit{border-color:var(--ink);color:var(--ink)}
+  .wrap-scroll{max-height:520px;overflow-y:auto;border:1px solid var(--rule)}
+
   /* ---------- states ---------- */
   .center{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
   .panel{width:100%;max-width:360px;background:var(--card);
@@ -261,14 +285,16 @@ async function loadBoard(){
 }
 
 async function loadMetrics(){
-  const [head, daily, vert, variant, pipe, cover, recent] = await Promise.all([
+  const [head, daily, vert, variant, pipe, cover, recent, week, weekT] = await Promise.all([
     sb.from('v_dash_headline').select('*').single(),
     sb.from('v_dash_daily').select('*'),
     sb.from('v_email_vertical_stats').select('*'),
     sb.from('v_variant_performance').select('*'),
     sb.from('v_dash_pipeline').select('*'),
     sb.from('v_vertical_coverage').select('*'),
-    sb.from('v_dash_recent').select('*')
+    sb.from('v_dash_recent').select('*'),
+    sb.from('v_dash_week').select('*'),
+    sb.from('v_dash_week_totals').select('*').single()
   ]);
   S.metrics = {
     head: head.data || {},
@@ -277,7 +303,9 @@ async function loadMetrics(){
     variant: variant.data || [],
     pipe: pipe.data || [],
     cover: cover.data || [],
-    recent: recent.data || []
+    recent: recent.data || [],
+    week: week.data || [],
+    weekT: weekT.data || {}
   };
 }
 
@@ -418,6 +446,7 @@ function overView(){
 
   const peak = Math.max(1, ...m.daily.map(d=>Number(d.drafted)||0));
 
+  const w = m.weekT || {};
   const stats = [
     ['Cleared today', `${num(h.cleared_today)}<small> / ${num(h.queued_today)}</small>`, false],
     ['Sent, 30 days', num(h.sent_30d), false],
@@ -425,6 +454,8 @@ function overView(){
     ['Reply rate', h.reply_rate_30d!=null?`${h.reply_rate_30d}<small>%</small>`:'&ndash;', true],
     ['Send-through', h.send_through_30d!=null?`${h.send_through_30d}<small>%</small>`:'&ndash;', false],
     ['Bounced', num(h.bounced_30d), false],
+    ['Meetings this week', num(w.meetings_7d), false],
+    ['Events this week', num(w.networking_7d), false],
     ['Open deals', num(h.open_deals), false],
     ['Open value', money(h.open_value), false],
     ['Engaged contacts', num(h.engaged_contacts), true],
@@ -463,6 +494,10 @@ function overView(){
       </div>
 
       <div>
+        <div class="block"><h2>The next two weeks</h2>
+          ${weekHtml(m.week)}
+        </div>
+
         <div class="block"><h2>Open pipeline</h2>
           ${m.pipe.length?`<table><thead><tr><th>Stage</th><th class="num">Deals</th>
             <th class="num">Value</th></tr></thead><tbody>
@@ -498,6 +533,46 @@ function overView(){
       :`<p class="hint">No outreach recorded yet.</p>`}
     </div>
   </main>`;
+}
+
+function weekHtml(events){
+  if(!events || !events.length){
+    return `<p class="hint">Nothing on the calendar for the next two weeks. If that looks wrong, run the calendar sync in n8n.</p>`;
+  }
+
+  const KIND = { meeting:'Meeting', networking:'Event',
+                 site_visit:'Site visit', internal:'Internal', other:'Block' };
+  const fmtTime = iso => new Date(iso).toLocaleTimeString('en-US',
+    { hour:'numeric', minute:'2-digit', timeZone:'America/Los_Angeles' });
+  const dayKey = iso => new Date(iso).toLocaleDateString('en-US',
+    { weekday:'short', month:'short', day:'numeric', timeZone:'America/Los_Angeles' });
+  const todayKey = dayKey(new Date().toISOString());
+
+  const days = [];
+  for(const e of events){
+    const k = dayKey(e.starts_at);
+    let d = days.find(x => x.key === k);
+    if(!d){ d = { key:k, items:[] }; days.push(d); }
+    d.items.push(e);
+  }
+
+  return `<div class="wrap-scroll">` + days.map(d => `
+    <div class="day">
+      <div class="day-head ${d.key===todayKey?'today':''}">
+        <span class="d">${esc(d.key===todayKey ? 'Today' : d.key)}</span>
+        <span class="n">${d.items.length}</span>
+      </div>
+      ${d.items.map(e => {
+        const who = e.contact_name
+          ? ` <em>with ${esc(e.contact_name)}${e.company_name ? ', ' + esc(e.company_name) : ''}</em>`
+          : (e.location ? ` <em>${esc(e.location).slice(0,60)}</em>` : '');
+        return `<div class="ev">
+          <span class="t">${e.is_all_day ? 'All day' : esc(fmtTime(e.starts_at))}</span>
+          <span class="s">${esc(e.subject || '')}${who}</span>
+          <span class="kind ${esc(e.event_type)}">${esc(KIND[e.event_type] || e.event_type)}</span>
+        </div>`;
+      }).join('')}
+    </div>`).join('') + `</div>`;
 }
 
 /* ---------------- action ---------------- */
