@@ -940,6 +940,7 @@ function visibleLeads(){
   const all = S.leads || [];
   if(S.leadFilter==='email')    return all.filter(l=>l.email);
   if(S.leadFilter==='nosector') return all.filter(l=>!l.vertical);
+  if(S.leadFilter==='unconf')   return all.filter(l=>l.apollo_matched===false);
   return all;
 }
 
@@ -954,6 +955,7 @@ function pageLeads(){
   const filters = [
     ['all','All', all.length],
     ['email','Has email', all.filter(l=>l.email).length],
+    ['unconf','Unconfirmed', all.filter(l=>l.apollo_matched===false).length],
     ['nosector','No sector', all.filter(l=>!l.vertical).length]
   ].map(([k,label,n])=>`<button class="filt ${S.leadFilter===k?'on':''}" data-lfilter="${k}">${label}<b>${n}</b></button>`).join('');
 
@@ -1001,6 +1003,7 @@ function pageLeads(){
 
 function batchRow(b){
   const awaiting = Number(b.awaiting_review||0);
+  const unconf = Number(b.unconfirmed||0);
   const seen = Number(b.approved_leads||0) + Number(b.rejected_leads||0);
   const total = seen + awaiting;
   const pct = total ? Math.round(100*seen/total) : 100;
@@ -1010,6 +1013,7 @@ function batchRow(b){
       <span class="tick" style="color:${awaiting?'var(--orange)':'var(--slate)'}">${awaiting||'clear'}</span>
     </span>
     <span class="org" style="margin-left:0">${esc(shortDate(b.created_at))}${total?` &middot; ${total} leads`:''}${
+      unconf?` &middot; <span style="color:var(--red)">${unconf} unconfirmed</span>`:''}${
       b.status && b.status!=='ready' ? ` &middot; ${esc(b.status)}` : ''}</span>
     <span class="bar" style="margin-top:8px"><i style="width:${pct}%"></i></span>
   </button>`;
@@ -1034,7 +1038,7 @@ function leadHtml(l){
 
   const hasMore = l.company_description || l.bio || l.company_keywords || links.length;
 
-  return `<article class="lead ${on?'keep':''} ${!l.vertical?'flag':''}">
+  return `<article class="lead ${on?'keep':''} ${(!l.vertical || l.apollo_matched===false)?'flag':''}">
     <label class="pick">
       <input type="checkbox" data-pick="${esc(l.contact_id)}" ${on?'checked':''}
              aria-label="Keep ${esc(l.full_name)}" />
@@ -1051,6 +1055,8 @@ function leadHtml(l){
       <div class="chips">
         ${l.vertical?`<span class="chip hot">${esc(l.vertical)}</span>`
                     :`<span class="chip bad">No sector</span>`}
+        ${l.apollo_matched===false?`<span class="chip bad" title="Apollo has no record of this person. Everything here came from the Evaboot scrape alone.">Unconfirmed</span>`:''}
+        ${l.apollo_matched!==false && l.company_matched===false?`<span class="chip">Company unmatched</span>`:''}
         ${l.email?`<span class="chip good">${esc(l.email)}</span>`
                  :`<span class="chip">No email</span>`}
         ${l.email_status?`<span class="chip">${esc(l.email_status)}</span>`:''}
