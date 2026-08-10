@@ -432,6 +432,7 @@ function render(){
 }
 
 function wirePage(){
+  if(S.page==='leads') return;
   document.querySelectorAll('[data-row]').forEach(el=>
     el.addEventListener('click',()=>{
       S.activeId = el.dataset.row; S.open={}; S.err='';
