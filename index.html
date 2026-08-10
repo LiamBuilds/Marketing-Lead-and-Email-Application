@@ -314,8 +314,8 @@ const KIND = { meeting:'Meeting', networking:'Event', site_visit:'Site visit',
                internal:'Internal', other:'Block' };
 
 const PAGES = [
-  ['today','Today'], ['outreach','Outreach'], ['calendar','Calendar'],
-  ['pipeline','Pipeline'], ['kpis','KPIs'], ['myday','My Day'], ['leads','Leads']
+  ['today','Personalized Emails'], ['outreach','Outreach'], ['calendar',"Pat's Calendar"],
+  ['pipeline','Pipeline'], ['kpis','KPIs'], ['myday',"Liam's Day"], ['leads','Leads']
 ];
 
 const S = {
@@ -646,8 +646,8 @@ function detailHtml(){
     </div>`;
   if(r.handled){
     return head + `<div class="done-banner"><span class="eyebrow">Cleared</span>
-      <p>The draft is in your Outlook drafts folder. Review and send from there.</p>
-      ${r.draft_web_link?`<p style="margin-top:9px"><a href="${esc(r.draft_web_link)}" target="_blank" rel="noopener"><b>Open the draft in Outlook</b></a></p>`:''}
+      <p>Sent from Pat's mailbox. It will show in his Sent Items.</p>
+      ${r.draft_web_link?`<p style="margin-top:9px"><a href="${esc(r.draft_web_link)}" target="_blank" rel="noopener"><b>Open it in Outlook</b></a></p>`:''}
       </div>`;
   }
   if(!drafts.length) return head + `<div class="panelbox"><p class="none">No drafts generated for this contact yet.</p></div>`;
@@ -671,8 +671,8 @@ function optHtml(d,i){
         <textarea id="b-${d.id}">${esc(toPlain(d.edited_body||d.body_html))}</textarea></div>
       <div class="actions">
         <button class="btn" data-use="${d.id}" ${S.busy?'disabled':''}>
-          ${S.busy?'Sending&hellip;':'Send to my drafts'}</button>
-        <span class="hint">Greeting and signature are added automatically.</span>
+          ${S.busy?'Sending&hellip;':'Send email'}</button>
+        <span class="hint">Sends from Pat's mailbox straight away. The signature is added automatically.</span>
       </div></div>`:''}
   </section>`;
 }
@@ -1387,16 +1387,22 @@ async function useDraft(draftId){
   const bodyText = document.getElementById('b-'+draftId).value.trim();
   if(!subject||!bodyText){ S.err='Add a subject and a message before sending.'; return render(); }
 
+  // This sends for real and cannot be recalled, so it asks first.
+  if(!confirm('Send this to ' + (r.email||'this contact') + ' now?\n\nIt goes out from Pat\u2019s mailbox immediately and cannot be recalled.')) return;
+
   S.busy=true; S.err=''; render();
   try{
-    const greeting = '<p style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222;line-height:22px;margin:0 0 14px 0;">Hi '
-      + esc(r.first_name || (r.full_name||'').split(' ')[0]) + ',</p>';
-    const signoff = '<p style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222;line-height:22px;margin:0 0 4px 0;">Pat</p>';
+    // The generated body already opens with a greeting and closes with
+    // Pat, and the generator picks the greeting name properly: it reads
+    // the email local part to catch Pipedrive records with first and last
+    // reversed. This page used to prepend its own naive version on top,
+    // which is why every email went out saying "Hi Liam, Hi Liam". Take
+    // the editor text as written and only reattach the signature.
     const sigStart = (d.body_html||'').indexOf('<table');
     const signature = sigStart>-1 ? d.body_html.slice(sigStart) : '';
 
     const { error:upErr } = await sb.from('email_drafts')
-      .update({ edited_subject:subject, edited_body:greeting+toHtml(bodyText)+signoff+signature })
+      .update({ edited_subject:subject, edited_body:toHtml(bodyText)+signature })
       .eq('id', draftId);
     if(upErr) throw upErr;
 
