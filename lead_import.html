@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Lead import</title>
+<style>
+  body{font-family:system-ui,sans-serif;background:#FAF9F7;color:#1C1B1A;
+       max-width:660px;margin:40px auto;padding:0 20px;line-height:1.55}
+  h1{font-size:20px;letter-spacing:.06em;text-transform:uppercase}
+  h1 span{color:#F68922}
+  label{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.08em;
+        color:#6E7477;font-weight:600;margin:18px 0 5px}
+  input[type=text]{width:100%;padding:10px 12px;font-size:14px;border:1px solid #DFDBD4;
+        background:#fff;font-family:inherit}
+  input[type=file]{font-size:14px}
+  button{margin-top:20px;background:#1C1B1A;color:#fff;border:0;padding:11px 22px;
+         font-size:14px;text-transform:uppercase;letter-spacing:.09em;cursor:pointer}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  pre{background:#fff;border:1px solid #DFDBD4;padding:14px;margin-top:20px;
+      white-space:pre-wrap;word-break:break-word;font-size:13px}
+  .ok{border-left:3px solid #3F7D5C}
+  .bad{border-left:3px solid #A6402C}
+  .info{font-size:13px;color:#6E7477;margin-top:8px}
+  table{width:100%;border-collapse:collapse;margin-top:14px;background:#fff;
+        border:1px solid #DFDBD4;font-size:13px}
+  th,td{text-align:left;padding:6px 9px;border-bottom:1px solid #EDEAE5}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#6E7477}
+</style>
+</head>
+<body>
+
+<h1>HAGGERT<span>Y</span> &nbsp;Lead import</h1>
+<p class="info">Reads an Evaboot CSV in the browser and sends the rows for Apollo
+enrichment. Nothing is uploaded anywhere except your own n8n instance.</p>
+
+<label for="file">Evaboot CSV</label>
+<input id="file" type="file" accept=".csv,text/csv" />
+<div id="preview"></div>
+
+<label for="name">Name this batch</label>
+<input id="name" type="text" placeholder="Auto leads, Sacramento" />
+
+<button id="go" disabled>Import and enrich</button>
+
+<pre id="out" hidden></pre>
+
+<script>
+const HOOK = 'https://haggertybuilds.app.n8n.cloud/webhook/haggerty-lead-import';
+const out = document.getElementById('out');
+const btn = document.getElementById('go');
+const preview = document.getElementById('preview');
+const nameEl = document.getElementById('name');
+let rows = [];
+
+// Minimal RFC4180 parser. Evaboot fields contain commas, quotes and
+// newlines inside company descriptions, so splitting on commas breaks.
+function parseCsv(text){
+  const out = [];
+  let row = [], field = '', inQuotes = false;
+  text = text.replace(/^\uFEFF/, '');
+  for(let i = 0; i < text.length; i++){
+    const c = text[i];
+    if(inQuotes){
+      if(c === '"'){
+        if(text[i+1] === '"'){ field += '"'; i++; }
+        else inQuotes = false;
+      } else field += c;
+    } else {
+      if(c === '"') inQuotes = true;
+      else if(c === ','){ row.push(field); field = ''; }
+      else if(c === '\n'){ row.push(field); out.push(row); row = []; field = ''; }
+      else if(c !== '\r') field += c;
+    }
+  }
+  if(field.length || row.length){ row.push(field); out.push(row); }
+  return out.filter(r => r.some(x => String(x).trim() !== ''));
+}
+
+document.getElementById('file').addEventListener('change', async e => {
+  const f = e.target.files[0];
+  if(!f) return;
+  const text = await f.text();
+  const grid = parseCsv(text);
+  if(grid.length < 2){ show('That file has no data rows.', false); return; }
+
+  const headers = grid[0].map(h => h.trim());
+  rows = grid.slice(1).map(r => {
+    const o = {};
+    headers.forEach((h, i) => { o[h] = r[i] !== undefined ? r[i] : ''; });
+    return o;
+  });
+
+  const withEmail = rows.filter(r => (r['Email'] || '').trim()).length;
+  const matching = rows.filter(r => (r['Matches Filters'] || '').toUpperCase() !== 'NO').length;
+
+  preview.innerHTML = `<table>
+    <tr><th>Rows</th><td>${rows.length}</td></tr>
+    <tr><th>Pass Evaboot filters</th><td>${matching}</td></tr>
+    <tr><th>Already have an email</th><td>${withEmail}</td></tr>
+    <tr><th>Columns</th><td>${headers.length}</td></tr>
+  </table>
+  <p class="info">Apollo will try to fill in the rest.</p>`;
+
+  if(!nameEl.value.trim()) nameEl.value = f.name.replace(/\.csv$/i, '');
+  btn.disabled = false;
+  out.hidden = true;
+});
+
+btn.addEventListener('click', async () => {
+  if(!rows.length) return;
+  btn.disabled = true;
+  show('Enriching ' + rows.length + ' leads through Apollo. Roughly a second and a half per ten, so give it a moment…', true);
+  try{
+    const res = await fetch(HOOK, {
+      method:'POST',
+      headers:{'content-type':'application/json'},
+      body: JSON.stringify({
+        name: nameEl.value.trim() || 'Evaboot import',
+        requested_by: 'liam',
+        leads: rows
+      })
+    });
+    const text = await res.text();
+    let pretty = text;
+    try { pretty = JSON.stringify(JSON.parse(text), null, 2); } catch(e){}
+    show('HTTP ' + res.status + '\n\n' + pretty, res.ok);
+  }catch(err){
+    show('Request failed: ' + (err.message || err), false);
+  }finally{
+    btn.disabled = false;
+  }
+});
+
+function show(msg, good){
+  out.hidden = false;
+  out.textContent = msg;
+  out.className = good ? 'ok' : 'bad';
+}
+</script>
+</body>
+</html>
