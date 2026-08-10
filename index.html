@@ -419,12 +419,13 @@ function wireChrome(){
 
 function render(){
   let inner = '';
-  if(S.page==='today')     inner = pageToday();
-  if(S.page==='outreach')  inner = pageOutreach();
-  if(S.page==='calendar')  inner = pageCalendar();
-  if(S.page==='pipeline')  inner = pagePipeline();
-  if(S.page==='kpis')      inner = pageKpis();
-  if(S.page==='myday')     inner = pageMyDay();
+  if(S.page==='today')    inner = pageToday();
+  if(S.page==='outreach') inner = pageOutreach();
+  if(S.page==='calendar') inner = pageCalendar();
+  if(S.page==='pipeline') inner = pagePipeline();
+  if(S.page==='kpis')     inner = pageKpis();
+  if(S.page==='myday')    inner = pageMyDay();
+  if(S.page==='leads')    inner = leadsPage();
   app.innerHTML = topbar() + inner;
   wireChrome();
   wirePage();
