@@ -108,6 +108,8 @@
   .chip{font-family:var(--mono);font-size:11px;border:1px solid var(--rule);
         padding:3px 7px;color:var(--slate);background:var(--card);text-decoration:none}
   .chip.hot{border-color:var(--orange);color:#8A4A05;background:var(--orange-tint)}
+  .chip.good{border-color:var(--green);color:var(--green)}
+  .chip.bad{border-color:var(--red);color:var(--red)}
   .panelbox{margin:18px 0 24px;padding:13px 15px;background:var(--card);border:1px solid var(--rule)}
   .panelbox p{margin:6px 0 0;font-size:13.5px;color:var(--grey)}
   .panelbox .none{color:var(--slate);font-style:italic}
@@ -142,6 +144,8 @@
   .btn.small{font-size:12.5px;padding:6px 12px}
   .btn.ghost{background:none;color:var(--grey);border:1px solid var(--rule)}
   .btn.ghost:hover{background:var(--wash);color:var(--ink)}
+  .btn.accent{background:var(--orange)}
+  .btn.accent:hover{background:#DE7A16}
   .done-banner{background:var(--card);border:1px solid var(--rule);
                border-left:3px solid var(--green);padding:15px 17px;margin-bottom:18px}
   .done-banner .eyebrow{color:var(--green)}
@@ -202,6 +206,53 @@
            margin-bottom:16px;align-items:end}
   @media (max-width:700px){.taskbar{grid-template-columns:1fr}}
 
+  /* ---------- leads ---------- */
+  .filters{display:flex;gap:4px;flex-wrap:wrap}
+  .filt{font-family:var(--mono);font-size:12px;background:none;cursor:pointer;
+        border:1px solid var(--rule);padding:5px 10px;color:var(--slate)}
+  .filt.on{border-color:var(--orange);color:var(--ink);background:var(--orange-tint)}
+  .filt b{font-weight:500;margin-left:6px;opacity:.7}
+
+  .lead{display:grid;grid-template-columns:36px 1fr;background:var(--card);
+        border:1px solid var(--rule);border-left:3px solid var(--rule);margin-bottom:9px}
+  .lead.keep{border-left-color:var(--orange)}
+  .lead.flag{border-left-color:var(--red)}
+  .lead .pick{display:flex;align-items:flex-start;justify-content:center;
+              padding-top:16px;cursor:pointer}
+  .lead .pick input{width:16px;height:16px;accent-color:var(--orange);cursor:pointer;margin:0}
+  .lead .lbody{padding:13px 15px 12px 0;min-width:0}
+  .lhead{display:flex;align-items:flex-start;gap:10px}
+  .lhead h3{font-family:var(--display);font-size:20px;font-weight:700;margin:0;line-height:1.15}
+  .lhead .role{font-size:13px;color:var(--slate);margin-top:1px}
+  .fit{font-family:var(--display);font-size:23px;font-weight:700;color:var(--orange);
+       margin-left:auto;line-height:1;flex-shrink:0}
+  .facts{display:flex;flex-wrap:wrap;gap:0 22px;margin:11px 0 0}
+  .facts dt{font-family:var(--display);text-transform:uppercase;letter-spacing:.07em;
+            font-size:11px;color:var(--slate);font-weight:600}
+  .facts dd{margin:0;font-size:13.5px}
+  .more{margin-top:12px;padding-top:11px;border-top:1px solid var(--rule-soft)}
+  .more p{margin:0 0 7px;font-size:13.5px;color:var(--grey)}
+
+  .actionbar{position:sticky;bottom:0;z-index:20;display:flex;align-items:center;
+             gap:14px;flex-wrap:wrap;background:var(--card);
+             border-top:1px solid var(--rule);padding:11px 26px;
+             margin:0 -26px;box-shadow:0 -6px 18px rgba(0,0,0,.06)}
+  .actionbar .count{font-family:var(--mono);font-size:12.5px;color:var(--slate)}
+  .actionbar .count b{font-family:var(--display);font-size:19px;color:var(--ink)}
+  .actionbar .grp{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto}
+  .prog{display:block;height:3px;background:var(--rule-soft);width:100%}
+  .prog i{display:block;height:100%;background:var(--orange)}
+
+  .sheet{position:fixed;inset:0;z-index:40;background:rgba(28,27,26,.45);
+         display:flex;align-items:flex-start;justify-content:center;
+         padding:44px 16px;overflow:auto}
+  .sheet-in{width:100%;max-width:450px;background:var(--card);
+            border:1px solid var(--rule);padding:24px 26px 26px}
+  .sheet-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+  .sheet-head h2{font-family:var(--display);font-size:23px;font-weight:700;margin:0}
+  .sheet-foot{margin-top:22px;padding-top:16px;border-top:1px solid var(--rule)}
+  .sheet-foot .btn{width:100%}
+
   /* ---------- states ---------- */
   .center{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
   .loginbox{width:100%;max-width:360px;background:var(--card);
@@ -217,13 +268,14 @@
     .split{grid-template-columns:1fr}
     .board{border-right:0;border-bottom:1px solid var(--rule)}
     .page{padding:18px 16px 70px}
+    .actionbar{padding:10px 16px;margin:0 -16px}
   }
   @media (prefers-reduced-motion:no-preference){
     .row,.task{transition:background .12s ease}
-    .opt,.tile{transition:border-color .18s ease}
+    .opt,.tile,.lead{transition:border-color .18s ease}
   }
   @media print{
-    .topbar,.btn,.linkbtn{display:none !important}
+    .topbar,.btn,.linkbtn,.actionbar{display:none !important}
     body{background:#fff}
     .page{max-width:none;padding:0}
   }
@@ -234,12 +286,21 @@
 
 <script type="module">
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
-import { leadsPage, mountLeads } from './leads.js';
-  
+
 const SUPABASE_URL = 'https://ekatzukprjpisdiwubjq.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_bdyRB7Mx0BKzNj1EcYlRCg_8JLDXEIL';
 const ACTION_URL   = 'https://haggertybuilds.app.n8n.cloud/webhook/haggerty-outreach-action';
 const GENERATE_URL = 'https://haggertybuilds.app.n8n.cloud/webhook/haggerty-generate-vertical';
+const IMPORT_URL   = 'https://haggertybuilds.app.n8n.cloud/webhook/haggerty-lead-import';
+const APPROVE_URL  = 'https://haggertybuilds.app.n8n.cloud/webhook/haggerty-lead-approve';
+const REJECT_URL   = 'https://haggertybuilds.app.n8n.cloud/webhook/haggerty-lead-reject';
+
+/* Approving creates an organisation, a person and a note per contact, in
+   sequence, behind one request. Forty leads in a single POST is a hundred
+   and twenty Pipedrive calls and the gateway gives up long before that
+   finishes. Eight at a time stays well inside the timeout and lets the
+   screen report progress as it goes. */
+const APPROVE_CHUNK = 8;
 
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
 const app = document.getElementById('app');
@@ -260,7 +321,12 @@ const PAGES = [
 const S = {
   page:'today', board:[], drafts:{}, activeId:null, open:{},
   busy:false, err:'', gen:'', metrics:null, week:null, tiles:null,
-  tasks:null, dayStatus:null, loaded:{}
+  tasks:null, dayStatus:null, loaded:{},
+  /* leads */
+  batches:null, leads:null, verticals:[], batchId:'all', leadFilter:'all',
+  picked:new Set(), leadOpen:{}, leadNote:'', leadErr:'', leadProg:null,
+  impOpen:false, impBusy:false, impRows:null, impFile:'', impName:'',
+  impVert:'', impErr:''
 };
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;')
@@ -275,6 +341,11 @@ const fmtTime = iso => new Date(iso).toLocaleTimeString('en-US',
   {hour:'numeric',minute:'2-digit',timeZone:'America/Los_Angeles'});
 const dayKey = iso => new Date(iso).toLocaleDateString('en-US',
   {weekday:'short',month:'short',day:'numeric',timeZone:'America/Los_Angeles'});
+const shortDate = iso => {
+  if(!iso) return '';
+  const d = new Date(iso);
+  return isNaN(d) ? '' : d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+};
 
 function toPlain(html){
   if(!html) return '';
@@ -375,6 +446,34 @@ async function loadTasks(){
   S.loaded.tasks = true;
 }
 
+async function loadVerticals(){
+  const { data } = await sb.from('verticals').select('slug,name').order('name');
+  S.verticals = data || [];
+  if(!S.impVert && S.verticals.length) S.impVert = S.verticals[0].slug;
+  S.loaded.verticals = true;
+}
+
+async function loadBatches(){
+  const { data, error } = await sb.from('v_batch_summary').select('*')
+    .order('created_at',{ascending:false}).limit(60);
+  if(error) throw error;
+  S.batches = data || [];
+}
+
+async function loadLeadRows(){
+  let q = sb.from('v_lead_review').select('*');
+  if(S.batchId !== 'all') q = q.eq('lead_batch_id', S.batchId);
+  const { data, error } = await q.order('fit',{ascending:false})
+    .order('created_at',{ascending:false}).limit(600);
+  if(error) throw error;
+  S.leads = data || [];
+  /* Approving most and dropping a few is the normal shape of a review,
+     so everything starts kept. */
+  S.picked = new Set(S.leads.map(l=>l.contact_id));
+  S.leadOpen = {};
+  S.loaded.leads = true;
+}
+
 async function ensure(page){
   if(page==='today'){
     if(!S.loaded.board) await loadBoard();
@@ -388,6 +487,10 @@ async function ensure(page){
   if(page==='calendar' && !S.loaded.week) await loadWeek();
   if((page==='pipeline'||page==='kpis') && !S.loaded.metrics) await loadMetrics();
   if(page==='myday' && !S.loaded.tasks) await loadTasks();
+  if(page==='leads'){
+    if(!S.loaded.verticals) await loadVerticals();
+    if(!S.loaded.leads){ await loadBatches(); await loadLeadRows(); }
+  }
 }
 
 /* ================= chrome ================= */
@@ -425,15 +528,13 @@ function render(){
   if(S.page==='pipeline') inner = pagePipeline();
   if(S.page==='kpis')     inner = pageKpis();
   if(S.page==='myday')    inner = pageMyDay();
-  if(S.page==='leads')    inner = leadsPage();
+  if(S.page==='leads')    inner = pageLeads();
   app.innerHTML = topbar() + inner;
   wireChrome();
   wirePage();
-  if (S.page==='leads') mountLeads (sb);
 }
 
 function wirePage(){
-  if(S.page==='leads') return;
   document.querySelectorAll('[data-row]').forEach(el=>
     el.addEventListener('click',()=>{
       S.activeId = el.dataset.row; S.open={}; S.err='';
@@ -460,6 +561,7 @@ function wirePage(){
   if(ex) ex.addEventListener('click', exportCsv);
   const pr = document.getElementById('printPage');
   if(pr) pr.addEventListener('click', ()=>window.print());
+  wireLeads();
 }
 
 /* ================= today ================= */
@@ -831,6 +933,448 @@ function taskHtml(t){
     </span>
     <button class="linkbtn" data-task-del="${t.id}">remove</button>
   </div>`;
+}
+
+/* ================= leads ================= */
+function visibleLeads(){
+  const all = S.leads || [];
+  if(S.leadFilter==='email')    return all.filter(l=>l.email);
+  if(S.leadFilter==='nosector') return all.filter(l=>!l.vertical);
+  return all;
+}
+
+function pageLeads(){
+  if(!S.loaded.leads) return loading();
+
+  const all = S.leads || [];
+  const vis = visibleLeads();
+  const kept = vis.filter(l=>S.picked.has(l.contact_id)).length;
+  const pending = (S.batches||[]).reduce((a,b)=>a+Number(b.awaiting_review||0),0);
+
+  const filters = [
+    ['all','All', all.length],
+    ['email','Has email', all.filter(l=>l.email).length],
+    ['nosector','No sector', all.filter(l=>!l.vertical).length]
+  ].map(([k,label,n])=>`<button class="filt ${S.leadFilter===k?'on':''}" data-lfilter="${k}">${label}<b>${n}</b></button>`).join('');
+
+  let body;
+  if(!all.length){
+    body = `<div class="empty" style="padding:40px 0">
+      <h2>Nothing waiting</h2>
+      <p>Every lead here has been approved or rejected. Import another Evaboot export to queue up more.</p>
+      <button class="btn" id="impOpen2" style="margin-top:14px">Import CSV</button>
+    </div>`;
+  } else if(!vis.length){
+    body = `<p class="hint">Nothing matches this filter.</p>`;
+  } else {
+    body = vis.map(leadHtml).join('');
+  }
+
+  return `<div class="split">
+    <nav class="board">
+      <div class="board-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+        <span class="eyebrow">Batches</span>
+        <button class="btn small" id="impOpen">Import CSV</button>
+      </div>
+      <button class="row ${S.batchId==='all'?'active':''}" data-batch="all">
+        <span class="row-top"><span class="name">Everything awaiting review</span>
+        <span class="tick" style="color:var(--slate)">${pending}</span></span>
+      </button>
+      ${(S.batches||[]).map(batchRow).join('')}
+    </nav>
+
+    <main class="page wide" style="padding-bottom:0">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+        <div class="filters" style="flex:1">${filters}</div>
+        <button class="linkbtn" id="leadRefresh">Refresh</button>
+      </div>
+
+      ${S.leadNote?`<div class="done-banner" style="margin-bottom:14px"><p style="margin:0">${esc(S.leadNote)}</p></div>`:''}
+      ${S.leadErr?`<p class="hint err" style="margin-bottom:14px">${esc(S.leadErr)}</p>`:''}
+
+      <div style="padding-bottom:18px">${body}</div>
+
+      ${all.length?actionBar(kept, vis.length):''}
+    </main>
+  </div>${S.impOpen?importSheet():''}`;
+}
+
+function batchRow(b){
+  const awaiting = Number(b.awaiting_review||0);
+  const seen = Number(b.approved_leads||0) + Number(b.rejected_leads||0);
+  const total = seen + awaiting;
+  const pct = total ? Math.round(100*seen/total) : 100;
+  return `<button class="row ${S.batchId===b.id?'active':''}" data-batch="${esc(b.id)}">
+    <span class="row-top">
+      <span class="name">${esc(b.name||'Untitled batch')}</span>
+      <span class="tick" style="color:${awaiting?'var(--orange)':'var(--slate)'}">${awaiting||'clear'}</span>
+    </span>
+    <span class="org" style="margin-left:0">${esc(shortDate(b.created_at))}${total?` &middot; ${total} leads`:''}${
+      b.status && b.status!=='ready' ? ` &middot; ${esc(b.status)}` : ''}</span>
+    <span class="bar" style="margin-top:8px"><i style="width:${pct}%"></i></span>
+  </button>`;
+}
+
+function leadHtml(l){
+  const on = S.picked.has(l.contact_id);
+  const open = !!S.leadOpen[l.contact_id];
+
+  const facts = [];
+  if(l.company_industry) facts.push(['Industry', l.company_industry]);
+  if(l.employee_count)   facts.push(['Headcount', num(l.employee_count)]);
+  if(l.company_revenue)  facts.push(['Revenue', l.company_revenue]);
+  if(l.company_city||l.company_state)
+    facts.push(['Location', [l.company_city,l.company_state].filter(Boolean).join(', ')]);
+  if(l.territory)        facts.push(['Territory', l.territory]);
+  if(l.seniority)        facts.push(['Seniority', l.seniority]);
+
+  const links = [];
+  if(l.linkedin_url)    links.push(`<a class="chip" href="${esc(l.linkedin_url)}" target="_blank" rel="noopener">LinkedIn</a>`);
+  if(l.company_website) links.push(`<a class="chip" href="${esc(l.company_website)}" target="_blank" rel="noopener">Website</a>`);
+
+  const hasMore = l.company_description || l.bio || l.company_keywords || links.length;
+
+  return `<article class="lead ${on?'keep':''} ${!l.vertical?'flag':''}">
+    <label class="pick">
+      <input type="checkbox" data-pick="${esc(l.contact_id)}" ${on?'checked':''}
+             aria-label="Keep ${esc(l.full_name)}" />
+    </label>
+    <div class="lbody">
+      <div class="lhead">
+        <div style="min-width:0">
+          <h3>${esc(l.full_name||'Unnamed')}</h3>
+          <div class="role">${esc(l.title||'No title')}${l.company_name?` at <b>${esc(l.company_name)}</b>`:''}</div>
+        </div>
+        <span class="fit" title="Outreach fit score">${l.fit!=null?esc(l.fit):'&ndash;'}</span>
+      </div>
+
+      <div class="chips">
+        ${l.vertical?`<span class="chip hot">${esc(l.vertical)}</span>`
+                    :`<span class="chip bad">No sector</span>`}
+        ${l.email?`<span class="chip good">${esc(l.email)}</span>`
+                 :`<span class="chip">No email</span>`}
+        ${l.email_status?`<span class="chip">${esc(l.email_status)}</span>`:''}
+        ${l.office_phone?`<span class="chip">${esc(l.office_phone)}</span>`:''}
+      </div>
+
+      ${facts.length?`<dl class="facts">${facts.map(([k,v])=>
+        `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>`:''}
+
+      ${open?`<div class="more">
+        ${l.company_description?`<p>${esc(l.company_description)}</p>`:''}
+        ${l.company_keywords?`<p class="mono muted">${esc(l.company_keywords)}</p>`:''}
+        ${l.bio?`<p class="hint">${esc(l.bio)}</p>`:''}
+        ${links.length?`<div class="chips">${links.join('')}</div>`:''}
+      </div>`:''}
+
+      ${hasMore?`<button class="linkbtn" data-more="${esc(l.contact_id)}"
+        style="padding-left:0">${open?'Less':'What Apollo found'}</button>`:''}
+    </div>
+  </article>`;
+}
+
+function actionBar(kept, total){
+  if(S.leadProg){
+    const p = S.leadProg;
+    const pct = p.total ? Math.round(100*p.done/p.total) : 0;
+    return `<div class="actionbar" style="flex-direction:column;align-items:stretch;gap:8px">
+      <span class="count">${esc(p.verb)} ${p.done} of ${p.total}${p.failed?` &middot; ${p.failed} failed`:''}</span>
+      <span class="prog"><i style="width:${pct}%"></i></span>
+    </div>`;
+  }
+  return `<div class="actionbar">
+    <span class="count"><b>${kept}</b> of ${total} kept</span>
+    <div class="grp">
+      <button class="btn small ghost" id="leadNone">Clear</button>
+      <button class="btn small ghost" id="leadAll">Select all</button>
+      <button class="btn small ghost" id="leadReject" ${kept?'':'disabled'}>Reject</button>
+      <button class="btn small accent" id="leadApprove" ${kept?'':'disabled'}>Approve to Pipedrive</button>
+    </div>
+  </div>`;
+}
+
+function importSheet(){
+  const opts = S.verticals.map(v=>
+    `<option value="${esc(v.slug)}" ${v.slug===S.impVert?'selected':''}>${esc(v.name)}</option>`).join('');
+  const ready = S.impRows && S.impRows.length;
+  return `<div class="sheet" role="dialog" aria-modal="true" aria-label="Import leads">
+    <div class="sheet-in">
+      <div class="sheet-head">
+        <h2>Import an Evaboot export</h2>
+        <button class="linkbtn" id="impClose">Close</button>
+      </div>
+
+      <div class="field"><label for="impName">Batch name</label>
+        <input type="text" id="impName" value="${esc(S.impName)}"
+               placeholder="Sacramento property managers, August" /></div>
+
+      <div class="field"><label for="impVert">Sector</label>
+        <select id="impVert">${opts}</select></div>
+      <p class="hint">Anything the classifier cannot place from the company data falls back
+        to this, so pick what you actually searched for.</p>
+
+      <div class="field"><label for="impFile">CSV file</label>
+        <input type="file" id="impFile" accept=".csv,text/csv"
+               style="width:100%;font-size:13px;padding:8px 0;border:0;background:none" /></div>
+
+      ${S.impFile?`<p class="hint"><b>${esc(S.impFile)}</b> &middot; ${
+        ready ? S.impRows.length + ' rows read' : 'nothing readable in this file'}</p>`:''}
+      ${S.impErr?`<p class="hint err">${esc(S.impErr)}</p>`:''}
+
+      <div class="sheet-foot">
+        <button class="btn" id="impRun" ${(ready&&!S.impBusy)?'':'disabled'}>
+          ${S.impBusy?'Enriching, this takes a minute&hellip;'
+                     :`Import ${ready?S.impRows.length+' leads':'leads'}`}</button>
+        <p class="hint" style="margin-top:8px">Every ten leads is one Apollo call, so a few
+          hundred rows takes a couple of minutes. Leave the tab open.</p>
+      </div>
+    </div>
+  </div>`;
+}
+
+function wireLeads(){
+  document.querySelectorAll('[data-batch]').forEach(el=>
+    el.addEventListener('click', async ()=>{
+      S.batchId = el.dataset.batch; S.leadNote=''; S.leadErr='';
+      S.loaded.leads = false; render();
+      await loadLeadRows(); render();
+    }));
+
+  document.querySelectorAll('[data-lfilter]').forEach(el=>
+    el.addEventListener('click',()=>{ S.leadFilter = el.dataset.lfilter; render(); }));
+
+  document.querySelectorAll('[data-more]').forEach(el=>
+    el.addEventListener('click',()=>{
+      const id = el.dataset.more;
+      S.leadOpen[id] = !S.leadOpen[id];
+      render();
+    }));
+
+  /* Toggling a checkbox updates in place rather than re-rendering, so
+     ticking through six hundred cards stays instant. */
+  document.querySelectorAll('[data-pick]').forEach(el=>
+    el.addEventListener('change',()=>{
+      const id = el.dataset.pick;
+      if(el.checked) S.picked.add(id); else S.picked.delete(id);
+      const card = el.closest('.lead');
+      if(card) card.classList.toggle('keep', el.checked);
+      const vis = visibleLeads();
+      const kept = vis.filter(l=>S.picked.has(l.contact_id)).length;
+      const c = document.querySelector('.actionbar .count b');
+      if(c) c.textContent = String(kept);
+      ['leadApprove','leadReject'].forEach(bid=>{
+        const b = document.getElementById(bid);
+        if(b) b.disabled = !kept;
+      });
+    }));
+
+  const rf = document.getElementById('leadRefresh');
+  if(rf) rf.addEventListener('click', async ()=>{
+    S.leadNote=''; S.leadErr=''; S.loaded.leads=false; render();
+    await loadBatches(); await loadLeadRows(); render();
+  });
+
+  const selAll = document.getElementById('leadAll');
+  if(selAll) selAll.addEventListener('click',()=>{
+    visibleLeads().forEach(l=>S.picked.add(l.contact_id)); render(); });
+
+  const selNone = document.getElementById('leadNone');
+  if(selNone) selNone.addEventListener('click',()=>{
+    visibleLeads().forEach(l=>S.picked.delete(l.contact_id)); render(); });
+
+  const ap = document.getElementById('leadApprove');
+  if(ap) ap.addEventListener('click', approveLeads);
+
+  const rj = document.getElementById('leadReject');
+  if(rj) rj.addEventListener('click', rejectLeads);
+
+  ['impOpen','impOpen2'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.addEventListener('click',()=>{ S.impOpen=true; S.impErr=''; render(); });
+  });
+
+  const ic = document.getElementById('impClose');
+  if(ic) ic.addEventListener('click',()=>{ S.impOpen=false; render(); });
+
+  const iv = document.getElementById('impVert');
+  if(iv) iv.addEventListener('change',()=>{ S.impVert = iv.value; });
+
+  const inm = document.getElementById('impName');
+  if(inm) inm.addEventListener('input',()=>{ S.impName = inm.value; });
+
+  const ifl = document.getElementById('impFile');
+  if(ifl) ifl.addEventListener('change',()=>readCsvFile(ifl));
+
+  const ir = document.getElementById('impRun');
+  if(ir) ir.addEventListener('click', runImport);
+}
+
+/* ---------- CSV ---------- */
+/* Evaboot profile summaries carry commas, quotes and line breaks, so
+   splitting on commas mangles roughly one row in three. This is a real
+   RFC 4180 reader: quoted fields, doubled quotes, embedded newlines. */
+function parseDelimited(text, delim){
+  const rows=[]; let row=[], field='', i=0, inQ=false;
+  while(i < text.length){
+    const ch = text[i];
+    if(inQ){
+      if(ch === '"'){
+        if(text[i+1] === '"'){ field+='"'; i+=2; continue; }
+        inQ=false; i++; continue;
+      }
+      field+=ch; i++; continue;
+    }
+    if(ch === '"'){ inQ=true; i++; continue; }
+    if(ch === delim){ row.push(field); field=''; i++; continue; }
+    if(ch === '\r'){ i++; continue; }
+    if(ch === '\n'){ row.push(field); rows.push(row); row=[]; field=''; i++; continue; }
+    field+=ch; i++;
+  }
+  if(field !== '' || row.length){ row.push(field); rows.push(row); }
+  return rows;
+}
+
+function sniffDelimiter(text){
+  const line = text.split(/\r?\n/,1)[0] || '';
+  const c=(line.match(/,/g)||[]).length, s=(line.match(/;/g)||[]).length, t=(line.match(/\t/g)||[]).length;
+  if(t>c && t>s) return '\t';
+  if(s>c) return ';';
+  return ',';
+}
+
+/* Headers stay exactly as Evaboot wrote them. The import workflow reads
+   "First Name", "Current Job", "Linkedin URL Public" and the rest by
+   literal string, so renaming anything here silently empties the field. */
+function csvToRows(text){
+  const clean = text.replace(/^\uFEFF/,'');
+  const rows = parseDelimited(clean, sniffDelimiter(clean))
+    .filter(r=>r.some(c=>String(c).trim()!==''));
+  if(rows.length < 2) return { rows:[], headers:[] };
+  const headers = rows[0].map(h=>String(h).trim());
+  const out = rows.slice(1).map(r=>{
+    const o={}; headers.forEach((h,idx)=>{ if(h) o[h] = r[idx]==null ? '' : r[idx]; });
+    return o;
+  });
+  return { rows: out, headers };
+}
+
+function readCsvFile(input){
+  const file = input.files && input.files[0];
+  if(!file) return;
+  S.impFile = file.name; S.impErr='';
+  if(!S.impName) S.impName = file.name.replace(/\.csv$/i,'');
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    try{
+      const { rows, headers } = csvToRows(String(reader.result||''));
+      S.impRows = rows;
+      if(!rows.length){
+        S.impErr = 'No data rows found. Export from Evaboot as CSV rather than XLSX.';
+      } else if(!headers.includes('First Name') && !headers.includes('Full Name')){
+        S.impErr = 'This does not look like an Evaboot export. The importer needs the original column headers, so upload the file exactly as Evaboot produced it.';
+      }
+    }catch(err){
+      S.impRows = null;
+      S.impErr = 'That file could not be read. ' + (err.message||'');
+    }
+    render();
+  };
+  reader.onerror = ()=>{ S.impErr='That file could not be read.'; render(); };
+  reader.readAsText(file);
+}
+
+/* ---------- lead actions ---------- */
+async function postIds(url, ids){
+  const res = await fetch(url,{method:'POST',
+    headers:{'content-type':'application/json'},
+    body:JSON.stringify({contact_ids:ids})});
+  if(!res.ok) throw new Error('The request came back ' + res.status);
+  return res.json().catch(()=>({}));
+}
+
+async function approveLeads(){
+  const ids = visibleLeads().filter(l=>S.picked.has(l.contact_id)).map(l=>l.contact_id);
+  if(!ids.length) return;
+  S.leadErr=''; S.leadNote='';
+  S.leadProg = { verb:'Approving', done:0, total:ids.length, failed:0 };
+  render();
+
+  let failed = 0;
+  for(let i=0; i<ids.length; i+=APPROVE_CHUNK){
+    const slice = ids.slice(i, i+APPROVE_CHUNK);
+    try{ await postIds(APPROVE_URL, slice); }
+    catch{ failed += slice.length; }
+    S.leadProg.done = Math.min(i+slice.length, ids.length);
+    S.leadProg.failed = failed;
+    render();
+  }
+
+  const cleared = ids.length - failed;
+  S.leadProg = null;
+  S.leadNote = failed
+    ? `${cleared} approved and pushed to Pipedrive. ${failed} did not go through, and they are still here to retry.`
+    : `${cleared} approved and pushed to Pipedrive.`;
+  S.loaded.leads=false; S.loaded.tiles=false; S.loaded.metrics=false;
+  await loadBatches(); await loadLeadRows(); render();
+}
+
+async function rejectLeads(){
+  const ids = visibleLeads().filter(l=>S.picked.has(l.contact_id)).map(l=>l.contact_id);
+  if(!ids.length) return;
+  S.leadErr=''; S.leadNote='';
+  S.leadProg = { verb:'Rejecting', done:0, total:ids.length, failed:0 };
+  render();
+  try{
+    /* One SQL update, so this does not need chunking. */
+    const out = await postIds(REJECT_URL, ids);
+    const n = out.rejected!=null ? out.rejected : ids.length;
+    S.leadNote = `${n} rejected. The records stay in the database, so the same people turning up in a later scrape are recognised rather than reviewed twice.`;
+  }catch(err){ S.leadErr = err.message||String(err); }
+  S.leadProg = null;
+  S.loaded.leads=false;
+  await loadBatches(); await loadLeadRows(); render();
+}
+
+async function runImport(){
+  if(!S.impRows || !S.impRows.length) return;
+  S.impBusy=true; S.impErr=''; S.leadNote=''; render();
+
+  let requestedBy = '';
+  try{
+    const { data } = await sb.auth.getUser();
+    requestedBy = (data && data.user && data.user.email) || '';
+  }catch{ /* not fatal */ }
+
+  try{
+    const res = await fetch(IMPORT_URL,{method:'POST',
+      headers:{'content-type':'application/json'},
+      body:JSON.stringify({
+        name: S.impName.trim() || S.impFile.replace(/\.csv$/i,'') || 'Evaboot import',
+        vertical_slug: S.impVert,
+        requested_by: requestedBy,
+        leads: S.impRows
+      })});
+    const out = await res.json().catch(()=>({}));
+    if(!res.ok || out.ok===false) throw new Error(out.error || 'The import came back ' + res.status);
+
+    const bits = [`${out.inserted} new leads from ${S.impRows.length} rows`];
+    if(out.matched!=null)    bits.push(`${out.matched} matched in Apollo`);
+    if(out.new_companies)    bits.push(`${out.new_companies} new companies`);
+    if(out.with_email!=null) bits.push(`${out.with_email} with an email`);
+    if(out.skipped)          bits.push(`${out.skipped} skipped for failing your Sales Navigator filters`);
+    if(out.no_vertical)      bits.push(`${out.no_vertical} with no sector`);
+    S.leadNote = bits.join('. ') + '.';
+
+    S.impOpen=false; S.impRows=null; S.impFile=''; S.impName='';
+    if(out.batch_id) S.batchId = out.batch_id;
+    S.loaded.leads=false;
+    await loadBatches(); await loadLeadRows();
+  }catch(err){
+    S.impErr = (err.message||String(err)) +
+      '. Large files take a while, since every ten leads is one Apollo call. If it timed out, check the batch list before uploading again so you do not import twice.';
+  }finally{
+    S.impBusy=false; render();
+  }
 }
 
 /* ================= actions ================= */
