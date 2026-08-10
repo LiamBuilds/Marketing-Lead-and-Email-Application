@@ -206,6 +206,20 @@
            margin-bottom:16px;align-items:end}
   @media (max-width:700px){.taskbar{grid-template-columns:1fr}}
 
+  /* ---------- sector strip ---------- */
+  .sectorbar{display:flex;gap:8px;overflow-x:auto;padding:11px 26px;
+             background:var(--card);border-bottom:1px solid var(--rule)}
+  .sec-tile{flex:0 0 auto;min-width:132px;background:var(--card);
+            border:1px solid var(--rule);border-top:3px solid var(--rule);padding:8px 11px 9px}
+  .sec-tile.live{border-top-color:var(--orange)}
+  .sec-tile.all{border-top-color:var(--ink)}
+  .sec-tile h4{font-family:var(--display);text-transform:uppercase;letter-spacing:.06em;
+               font-size:12.5px;font-weight:700;margin:0;white-space:nowrap}
+  .sec-tile .n{font-family:var(--display);font-size:21px;font-weight:700;line-height:1.15}
+  .sec-tile .n small{font-family:var(--mono);font-size:10.5px;color:var(--slate);font-weight:400}
+  .sec-tile .btn{margin-top:6px;width:100%}
+  @media (max-width:820px){ .sectorbar{padding:10px 16px} }
+
   /* ---------- leads ---------- */
   .filters{display:flex;gap:4px;flex-wrap:wrap}
   .filt{font-family:var(--mono);font-size:12px;background:none;cursor:pointer;
@@ -314,8 +328,8 @@ const KIND = { meeting:'Meeting', networking:'Event', site_visit:'Site visit',
                internal:'Internal', other:'Block' };
 
 const PAGES = [
-  ['today','Personalized Emails'], ['outreach','Outreach'], ['calendar',"Pat's Calendar"],
-  ['pipeline','Pipeline'], ['kpis','KPIs'], ['myday',"Liam's Day"], ['leads','Leads']
+  ['today','Outreach'], ['calendar',"Pat's Calendar"],
+  ['kpis','Pipeline & KPIs'], ['myday',"Liam's Day"], ['leads','Leads']
 ];
 
 const S = {
@@ -326,7 +340,9 @@ const S = {
   batches:null, leads:null, verticals:[], batchId:'all', leadFilter:'all',
   picked:new Set(), leadOpen:{}, leadNote:'', leadErr:'', leadProg:null,
   impOpen:false, impBusy:false, impRows:null, impFile:'', impName:'',
-  impVert:'', impErr:''
+  impVert:'', impErr:'',
+  /* kpis */
+  kpi:null, kpiEdit:false, kpiBusy:false, kpiErr:'', kpiNote:''
 };
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;')
@@ -446,6 +462,27 @@ async function loadTasks(){
   S.loaded.tasks = true;
 }
 
+async function loadKpis(){
+  const yr = new Date().getFullYear();
+  const [score, quarters, monthly, outcomes, open, stages, targets, manual] = await Promise.all([
+    sb.from('v_kpi_scorecard').select('*').order('sort_order'),
+    sb.from('v_kpi_quarters').select('*').order('quarter'),
+    sb.from('v_kpi_monthly').select('*').order('month'),
+    sb.from('v_kpi_outcomes').select('*').single(),
+    sb.from('v_kpi_open').select('*').single(),
+    sb.from('v_kpi_stages').select('*').order('order_nr'),
+    sb.from('kpi_targets').select('*').order('sort_order'),
+    sb.from('kpi_manual').select('*').eq('year', yr).order('quarter')
+  ]);
+  S.kpi = {
+    score: score.data || [], quarters: quarters.data || [],
+    monthly: monthly.data || [], outcomes: outcomes.data || {},
+    open: open.data || {}, stages: stages.data || [],
+    targets: targets.data || [], manual: manual.data || [], year: yr
+  };
+  S.loaded.kpis = true;
+}
+
 async function loadVerticals(){
   const { data } = await sb.from('verticals').select('slug,name').order('name');
   S.verticals = data || [];
@@ -477,15 +514,15 @@ async function loadLeadRows(){
 async function ensure(page){
   if(page==='today'){
     if(!S.loaded.board) await loadBoard();
+    if(!S.loaded.tiles) await loadTiles();
     if(!S.loaded.week) await loadWeek();
     if(!S.loaded.tasks) await loadTasks();
   }
-  if(page==='outreach'){
-    if(!S.loaded.tiles) await loadTiles();
+  if(page==='calendar' && !S.loaded.week) await loadWeek();
+  if(page==='kpis'){
+    if(!S.loaded.kpis) await loadKpis();
     if(!S.loaded.metrics) await loadMetrics();
   }
-  if(page==='calendar' && !S.loaded.week) await loadWeek();
-  if((page==='pipeline'||page==='kpis') && !S.loaded.metrics) await loadMetrics();
   if(page==='myday' && !S.loaded.tasks) await loadTasks();
   if(page==='leads'){
     if(!S.loaded.verticals) await loadVerticals();
@@ -523,9 +560,7 @@ function wireChrome(){
 function render(){
   let inner = '';
   if(S.page==='today')    inner = pageToday();
-  if(S.page==='outreach') inner = pageOutreach();
   if(S.page==='calendar') inner = pageCalendar();
-  if(S.page==='pipeline') inner = pagePipeline();
   if(S.page==='kpis')     inner = pageKpis();
   if(S.page==='myday')    inner = pageMyDay();
   if(S.page==='leads')    inner = pageLeads();
@@ -561,6 +596,12 @@ function wirePage(){
   if(ex) ex.addEventListener('click', exportCsv);
   const pr = document.getElementById('printPage');
   if(pr) pr.addEventListener('click', ()=>window.print());
+  const ke = document.getElementById('kpiEdit');
+  if(ke) ke.addEventListener('click', ()=>{ S.kpiEdit=!S.kpiEdit; S.kpiErr=''; S.kpiNote=''; render(); });
+  const kc = document.getElementById('kpiCancel');
+  if(kc) kc.addEventListener('click', ()=>{ S.kpiEdit=false; S.kpiErr=''; render(); });
+  const ks = document.getElementById('kpiSave');
+  if(ks) ks.addEventListener('click', saveKpiTargets);
   wireLeads();
 }
 
@@ -591,15 +632,15 @@ function pageToday(){
     </div>`;
 
   if(!S.board.length){
-    return `<div class="page cols3"><div>
+    return sectorBar() + `<div class="page cols3"><div>
       <div class="empty" style="padding:34px 0">
         <h2>Nothing queued for today</h2>
-        <p>The board fills at 6:15am on weekdays. Use the Outreach tab to pull contacts now.</p>
+        <p>The board fills at 6:15am on weekdays. Pull a sector from the strip above to start now.</p>
       </div></div><div>${side}</div></div>`;
   }
 
   const done = S.board.filter(r=>r.handled).length;
-  return `<div class="split">
+  return sectorBar() + `<div class="split">
     <nav class="board">
       <div class="board-head"><span class="eyebrow">${done} of ${S.board.length} cleared</span></div>
       ${S.board.map(rowHtml).join('')}
@@ -677,58 +718,30 @@ function optHtml(d,i){
   </section>`;
 }
 
-/* ================= outreach ================= */
-function pageOutreach(){
-  if(!S.loaded.tiles) return loading();
-  const m = S.metrics;
-  return `<main class="page">
-    <div class="block">
-      <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap">
-        <h2 class="sec" style="flex:1;min-width:200px">Sectors</h2>
-        <button class="btn small ghost" id="genAll" ${S.busy?'disabled':''}>Two from every sector</button>
-      </div>
-      ${S.gen?`<p class="hint" style="margin:0 0 10px">${esc(S.gen)}</p>`:''}
-      <div class="tiles">${(S.tiles||[]).map(tileHtml).join('')}</div>
+/* ================= sector strip ================= */
+/* Filling the board and working it were two tabs, which meant leaving
+   the board to fetch more work and coming back. The pools live above the
+   board now, so an empty board and the button that fixes it are on the
+   same screen. */
+function sectorBar(){
+  const tiles = S.tiles || [];
+  if(!tiles.length) return '';
+  return `<div class="sectorbar">
+    <div class="sec-tile all">
+      <h4>Every sector</h4>
+      <div class="n">${num(tiles.reduce((a,t)=>a+Number(t.pool||0),0))}<small> ready</small></div>
+      <button class="btn small ghost" id="genAll" ${S.busy?'disabled':''}>Two from each</button>
     </div>
-
-    ${m ? `<div class="cols">
-      <div class="block"><h2 class="sec">Which approach works</h2>
-        ${m.variant.length?`<table><thead><tr><th>Approach</th><th class="num">Chosen</th>
-          <th class="num">Sent</th><th class="num">Replied</th><th class="num">Rate</th></tr></thead><tbody>
-          ${m.variant.map(v=>`<tr><td>${esc(LABELS[v.variant_type]||v.variant_type)}</td>
-            <td class="num">${num(v.times_selected)}</td><td class="num">${num(v.times_sent)}</td>
-            <td class="num">${num(v.replied)}</td>
-            <td class="num">${v.reply_rate_pct!=null?v.reply_rate_pct+'%':'&ndash;'}</td></tr>`).join('')}
-          </tbody></table>`
-        :`<p class="hint">Fills in as Pat picks and sends. This is the number that tells you which ask earns replies.</p>`}
-      </div>
-      <div class="block"><h2 class="sec">By sector</h2>
-        ${m.vert.length?`<table><thead><tr><th>Sector</th><th class="num">Drafted</th>
-          <th class="num">Sent</th><th class="num">Replied</th></tr></thead><tbody>
-          ${m.vert.map(v=>`<tr><td>${esc(v.vertical)}</td><td class="num">${num(v.drafted)}</td>
-            <td class="num">${num(v.sent)}</td><td class="num">${num(v.replied)}</td></tr>`).join('')}
-          </tbody></table>`:`<p class="hint">No outreach recorded yet.</p>`}
-      </div>
-    </div>
-
-    <div class="block"><h2 class="sec">Recent outreach</h2>
-      ${recentTable(m.recent)}
-    </div>` : ''}
-  </main>`;
-}
-
-function tileHtml(t){
-  const live = Number(t.pool) > 0;
-  return `<div class="tile ${live?'live':'empty'}">
-    <h3>${esc(t.vertical)}</h3>
-    <div class="pool">${num(t.pool)}<small> ready</small></div>
-    <div class="meta">${num(t.sent_all_time)} sent &middot; ${num(t.replied_all_time)} replied${
-      Number(t.queued_today)?` &middot; ${num(t.queued_today)} queued today`:''}</div>
-    ${t.has_proof?'':'<div class="meta" style="color:var(--red)">no proof points</div>'}
-    <div class="foot">
-      <button class="btn small" data-gen="${t.vertical_id}" ${(!live||S.busy)?'disabled':''}>Generate 5</button>
-    </div>
-  </div>`;
+    ${tiles.map(t=>{
+      const live = Number(t.pool) > 0;
+      return `<div class="sec-tile ${live?'live':''}" title="${num(t.sent_all_time)} sent, ${num(t.replied_all_time)} replied${t.has_proof?'':', no proof points'}">
+        <h4>${esc(t.vertical)}${t.has_proof?'':' <span style="color:var(--red)">&bull;</span>'}</h4>
+        <div class="n">${num(t.pool)}<small> ready</small>${
+          Number(t.queued_today)?`<small> &middot; ${num(t.queued_today)} today</small>`:''}</div>
+        <button class="btn small" data-gen="${t.vertical_id}" ${(!live||S.busy)?'disabled':''}>Generate 5</button>
+      </div>`;
+    }).join('')}
+  </div>${S.gen?`<p class="hint" style="padding:9px 26px 0;margin:0">${esc(S.gen)}</p>`:''}`;
 }
 
 function recentTable(rows){
@@ -790,97 +803,228 @@ function evRow(e){
   </div>`;
 }
 
-/* ================= pipeline ================= */
-function pagePipeline(){
-  if(!S.loaded.metrics) return loading();
-  const m = S.metrics, h = m.head;
-  const total = (m.pipe||[]).reduce((a,p)=>a+Number(p.value||0),0) || 1;
-  return `<main class="page">
-    <div class="stat-grid">
-      <div class="stat"><div class="k">Open deals</div><div class="v">${num(h.open_deals)}</div></div>
-      <div class="stat accent"><div class="k">Open value</div><div class="v">${money(h.open_value)}</div></div>
-      <div class="stat"><div class="k">Engaged contacts</div><div class="v">${num(h.engaged_contacts)}</div></div>
-      <div class="stat"><div class="k">Pool remaining</div><div class="v">${num(h.pool_remaining)}</div></div>
-    </div>
-    <div class="cols">
-      <div class="block"><h2 class="sec">By stage</h2>
-        ${m.pipe.length?`<table><thead><tr><th>Stage</th><th class="num">Deals</th>
-          <th class="num">Value</th><th style="width:26%"></th></tr></thead><tbody>
-          ${m.pipe.map(p=>`<tr><td>${esc(p.stage)}</td><td class="num">${num(p.deals)}</td>
-            <td class="num">${money(p.value)}</td>
-            <td><span class="bar"><i style="width:${Math.round(100*Number(p.value||0)/total)}%"></i></span></td>
-          </tr>`).join('')}</tbody></table>`:`<p class="hint">No open deals in Pipedrive.</p>`}
-      </div>
-      <div class="block"><h2 class="sec">Pool by sector</h2>
-        <table><thead><tr><th>Sector</th><th class="num">Eligible</th>
-          <th class="num">Out of area</th><th class="num">Undeliverable</th></tr></thead><tbody>
-          ${m.cover.map(c=>`<tr><td>${esc(c.vertical)}</td><td class="num">${num(c.eligible)}</td>
-            <td class="num muted">${num(c.out_of_area)}</td>
-            <td class="num muted">${num(c.undeliverable)}</td></tr>`).join('')}
-        </tbody></table>
-      </div>
-    </div></main>`;
+/* ================= pipeline and kpis ================= */
+/* Pat's scorecard, mirroring the quarterly tracker he keeps by hand.
+   The spreadsheet reports YTD against the annual target and nothing
+   else, so 40 percent in April reads like failure when it is 160
+   percent of pace. Both numbers appear here, and pace leads. */
+
+function paceWord(p){
+  if(p==null) return '';
+  if(p >= 110) return 'ahead';
+  if(p >= 90)  return 'on pace';
+  return 'behind';
+}
+function paceColor(p){
+  if(p==null) return 'var(--slate)';
+  if(p >= 110) return 'var(--green)';
+  if(p >= 90)  return 'var(--ink)';
+  return 'var(--red)';
+}
+function kpiVal(row){
+  return row.unit==='currency' ? money(row.ytd_actual) : num(row.ytd_actual);
+}
+function kpiTarget(row){
+  return row.unit==='currency' ? money(row.year_target) : num(row.year_target);
 }
 
-/* ================= kpis ================= */
 function pageKpis(){
-  if(!S.loaded.metrics) return loading();
-  const m = S.metrics, h = m.head, w = m.weekT || {};
-  const peak = Math.max(1, ...m.daily.map(d=>Number(d.drafted)||0));
-  const stats = [
-    ['Sent, 30 days', num(h.sent_30d), false],
-    ['Replies, 30 days', num(h.replied_30d), true],
-    ['Reply rate', h.reply_rate_30d!=null?`${h.reply_rate_30d}<small>%</small>`:'&ndash;', true],
-    ['Send-through', h.send_through_30d!=null?`${h.send_through_30d}<small>%</small>`:'&ndash;', false],
-    ['Bounced', num(h.bounced_30d), false],
-    ['Meetings this week', num(w.meetings_7d), false],
-    ['Events this week', num(w.networking_7d), false],
-    ['Open deals', num(h.open_deals), false],
-    ['Open value', money(h.open_value), true],
-    ['Engaged contacts', num(h.engaged_contacts), false]
-  ].map(([k,v,a])=>`<div class="stat ${a?'accent':''}"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
+  if(!S.loaded.kpis) return loading();
+  const k = S.kpi, m = S.metrics;
+  const o = k.outcomes || {}, op = k.open || {};
+  const qtr = Math.floor(new Date().getMonth()/3) + 1;
+
+  /* ---- scorecard ---- */
+  const score = k.score.map(r=>{
+    const pct = r.pct_of_year!=null ? Math.min(100, Number(r.pct_of_year)) : 0;
+    return `<tr>
+      <td><b>${esc(r.label)}</b>${r.source==='manual'?' <span class="chip">entered by hand</span>':''}
+        ${r.mapped?'':' <span class="chip bad">not mapped</span>'}</td>
+      <td class="num">${esc(kpiTarget(r))}</td>
+      <td class="num"><b>${esc(kpiVal(r))}</b></td>
+      <td class="num" style="color:${paceColor(r.pct_of_pace)}">
+        ${r.pct_of_pace!=null?r.pct_of_pace+'%':'&ndash;'}
+        <small style="display:block;font-family:var(--body);font-size:10.5px">${paceWord(r.pct_of_pace)}</small></td>
+      <td><span class="bar"><i style="width:${pct}%"></i></span>
+        <small class="mono" style="color:var(--slate)">${r.pct_of_year!=null?r.pct_of_year+'% of year':''}</small></td>
+    </tr>`;
+  }).join('');
+
+  /* ---- quarters ---- */
+  const qPeak = Math.max(1, ...k.quarters.map(q=>Number(q.added)||0), Number(k.quarters[0]?.goal)||0);
+  const quarters = k.quarters.map(q=>`<tr>
+    <td>Q${q.quarter}${q.quarter===qtr?' <span class="chip hot">now</span>':''}</td>
+    <td class="num">${money(q.goal)}</td>
+    <td class="num"><b>${money(q.added)}</b></td>
+    <td class="num">${num(q.deals)}</td>
+    <td><span class="bar"><i style="width:${Math.round(100*(Number(q.added)||0)/qPeak)}%"></i></span></td>
+  </tr>`).join('');
+
+  /* ---- funnel ---- */
+  const fPeak = Math.max(1, ...k.stages.map(x=>Number(x.deals)||0));
+  const funnel = k.stages.map(x=>`<tr>
+    <td class="mono muted">${x.order_nr}</td>
+    <td>${esc(x.stage)}</td>
+    <td class="num">${num(x.deals)}</td>
+    <td class="num">${money(x.value)}</td>
+    <td><span class="bar"><i style="width:${Math.round(100*(Number(x.deals)||0)/fPeak)}%"></i></span></td>
+  </tr>`).join('');
+
+  /* ---- twelve months ---- */
+  const mPeak = Math.max(1, ...k.monthly.map(x=>Number(x.added)||0));
+  const months = k.monthly.map(x=>{
+    const d = new Date(x.month + 'T00:00:00');
+    const lab = d.toLocaleDateString('en-US',{month:'short',year:'2-digit'});
+    return `<tr><td class="mono">${esc(lab)}</td>
+      <td class="num">${money(x.added)}</td>
+      <td class="num muted">${num(x.deals)}</td>
+      <td><span class="bar"><i style="width:${Math.round(100*(Number(x.added)||0)/mPeak)}%"></i></span></td>
+    </tr>`;
+  }).join('');
+  const rolling = k.monthly.reduce((a,x)=>a+Number(x.added||0),0);
+
+  /* ---- targets editor ---- */
+  const editor = S.kpiEdit ? `<div class="block">
+    <h2 class="sec">Targets</h2>
+    <p class="hint" style="margin-top:0">Quarterly. The annual target is always four times this, matching the spreadsheet.</p>
+    <table><thead><tr><th>Metric</th><th class="num" style="width:190px">Quarter target</th></tr></thead><tbody>
+      ${k.targets.map(t=>`<tr><td>${esc(t.label)}</td>
+        <td class="num"><input type="text" data-tgt="${esc(t.metric_key)}"
+          value="${esc(t.quarter_target)}" style="text-align:right"/></td></tr>`).join('')}
+    </tbody></table>
+
+    <h2 class="sec" style="margin-top:22px">Competitive bid, ${k.year}</h2>
+    <p class="hint" style="margin-top:0">No stage carries this. Bidding has never held a deal, so it is entered by hand each quarter.</p>
+    <table><thead><tr><th>Quarter</th><th class="num" style="width:190px">Value</th></tr></thead><tbody>
+      ${[1,2,3,4].map(q=>{
+        const row = k.manual.find(x=>x.quarter===q && x.metric_key==='competitive_bid');
+        return `<tr><td>Q${q}</td><td class="num"><input type="text" data-man="${q}"
+          value="${esc(row?row.value:0)}" style="text-align:right"/></td></tr>`;
+      }).join('')}
+    </tbody></table>
+
+    <div class="actions">
+      <button class="btn" id="kpiSave" ${S.kpiBusy?'disabled':''}>${S.kpiBusy?'Saving&hellip;':'Save'}</button>
+      <button class="btn ghost small" id="kpiCancel">Cancel</button>
+      ${S.kpiErr?`<span class="hint err">${esc(S.kpiErr)}</span>`:''}
+    </div>
+  </div>` : '';
 
   return `<main class="page">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
-      <span class="eyebrow" style="flex:1;min-width:180px">Thirty day summary</span>
+      <span class="eyebrow" style="flex:1;min-width:180px">Pat Dobson &middot; ${k.year} &middot; Q${qtr} to date</span>
+      <button class="btn small ghost" id="kpiEdit">${S.kpiEdit?'Hide targets':'Edit targets'}</button>
       <button class="btn small ghost" id="exportCsv">Export CSV</button>
       <button class="btn small ghost" id="printPage">Print</button>
     </div>
-    <div class="stat-grid">${stats}</div>
 
+    ${S.kpiNote?`<div class="done-banner" style="margin-bottom:16px"><p style="margin:0">${esc(S.kpiNote)}</p></div>`:''}
+
+    <div class="stat-grid">
+      <div class="stat accent"><div class="k">Open pipeline</div><div class="v">${money(op.open_value)}</div></div>
+      <div class="stat"><div class="k">Open deals</div><div class="v">${num(op.open_deals)}</div></div>
+      <div class="stat"><div class="k">Average deal</div><div class="v">${money(op.avg_value)}</div></div>
+      <div class="stat"><div class="k">Rolling 12mo added</div><div class="v">${money(rolling)}</div></div>
+    </div>
+
+    <div class="block">
+      <h2 class="sec">Scorecard</h2>
+      <table><thead><tr><th>Metric</th><th class="num">Year target</th>
+        <th class="num">Year to date</th><th class="num">Pace</th>
+        <th style="width:24%">Progress</th></tr></thead><tbody>${score}</tbody></table>
+      <p class="hint">Pace divides year to date by the target for the ${qtr} quarter${qtr===1?'':'s'} elapsed,
+      so 100% means level. Progress is the same number his spreadsheet shows, against the full year.</p>
+    </div>
+
+    ${editor}
+
+    <div class="cols">
+      <div class="block"><h2 class="sec">Pipeline added by quarter</h2>
+        <table><thead><tr><th>Quarter</th><th class="num">Goal</th><th class="num">Added</th>
+          <th class="num">Deals</th><th style="width:26%"></th></tr></thead><tbody>${quarters}</tbody></table>
+      </div>
+      <div class="block"><h2 class="sec">Open funnel</h2>
+        <table><thead><tr><th class="num">#</th><th>Stage</th><th class="num">Deals</th>
+          <th class="num">Value</th><th style="width:22%"></th></tr></thead><tbody>${funnel}</tbody></table>
+      </div>
+    </div>
+
+    <div class="block">
+      <h2 class="sec">Won and lost, rolling twelve months</h2>
+      <div class="stat-grid" style="margin-bottom:12px">
+        <div class="stat"><div class="k">Won</div><div class="v">${num(o.won_deals)}<small> / ${num(o.decided_deals)}</small></div></div>
+        <div class="stat accent"><div class="k">Win rate, by count</div><div class="v">${o.win_rate_count!=null?o.win_rate_count+'<small>%</small>':'&ndash;'}</div></div>
+        <div class="stat"><div class="k">Win rate, by value</div><div class="v">${o.win_rate_value!=null?o.win_rate_value+'<small>%</small>':'&ndash;'}</div></div>
+        <div class="stat"><div class="k">Average won</div><div class="v">${money(o.avg_won)}</div></div>
+        <div class="stat"><div class="k">Average lost</div><div class="v">${money(o.avg_lost)}</div></div>
+      </div>
+      <p class="hint">${
+        (o.win_rate_count!=null && o.win_rate_value!=null && Number(o.win_rate_count) > Number(o.win_rate_value) + 10)
+        ? `Winning ${o.win_rate_count}% of decided deals but only ${o.win_rate_value}% of the value. The average win is ${money(o.avg_won)} against an average loss of ${money(o.avg_lost)}, so the losses are the larger jobs.`
+        : 'Closed deals carry no close date in Pipedrive, only a last-updated date, so the twelve month window is approximate.'
+      }</p>
+    </div>
+
+    <div class="block">
+      <h2 class="sec">Pipeline added, last twelve months</h2>
+      <div class="scroll short"><table><thead><tr><th>Month</th><th class="num">Added</th>
+        <th class="num">Deals</th><th style="width:34%"></th></tr></thead><tbody>${months}</tbody></table></div>
+    </div>
+
+    ${m ? `<h2 class="sec" style="margin-top:30px">Email outreach</h2>
     <div class="cols">
       <div class="block"><h2 class="sec">Last 14 days</h2>
         <table><thead><tr><th>Day</th><th class="num">Drafted</th><th class="num">Sent</th>
-          <th class="num">Replied</th><th style="width:30%"></th></tr></thead><tbody>
+          <th class="num">Replied</th></tr></thead><tbody>
           ${m.daily.map(d=>`<tr><td class="mono">${esc(String(d.day).slice(5))}</td>
             <td class="num">${num(d.drafted)}</td><td class="num">${num(d.sent)}</td>
-            <td class="num">${num(d.replied)}</td>
-            <td><span class="bar"><i style="width:${Math.round(100*(Number(d.drafted)||0)/peak)}%"></i></span></td>
-          </tr>`).join('')}</tbody></table>
+            <td class="num">${num(d.replied)}</td></tr>`).join('')}</tbody></table>
       </div>
-      <div class="block"><h2 class="sec">By sector</h2>
-        ${m.vert.length?`<table><thead><tr><th>Sector</th><th class="num">Sent</th>
-          <th class="num">Replied</th><th class="num">Rate</th></tr></thead><tbody>
-          ${m.vert.map(v=>`<tr><td>${esc(v.vertical)}</td><td class="num">${num(v.sent)}</td>
+      <div class="block"><h2 class="sec">Which approach works</h2>
+        ${m.variant.length?`<table><thead><tr><th>Approach</th><th class="num">Chosen</th>
+          <th class="num">Sent</th><th class="num">Replied</th><th class="num">Rate</th></tr></thead><tbody>
+          ${m.variant.map(v=>`<tr><td>${esc(LABELS[v.variant_type]||v.variant_type)}</td>
+            <td class="num">${num(v.times_selected)}</td><td class="num">${num(v.times_sent)}</td>
             <td class="num">${num(v.replied)}</td>
             <td class="num">${v.reply_rate_pct!=null?v.reply_rate_pct+'%':'&ndash;'}</td></tr>`).join('')}
-          </tbody></table>`:`<p class="hint">No outreach recorded yet.</p>`}
+          </tbody></table>`:`<p class="hint">Fills in as Pat picks and sends.</p>`}
       </div>
     </div>
 
-    <div class="block"><h2 class="sec">Which approach works</h2>
-      ${m.variant.length?`<table><thead><tr><th>Approach</th><th class="num">Chosen</th>
-        <th class="num">Sent</th><th class="num">Replied</th><th class="num">Rate</th></tr></thead><tbody>
-        ${m.variant.map(v=>`<tr><td>${esc(LABELS[v.variant_type]||v.variant_type)}</td>
-          <td class="num">${num(v.times_selected)}</td><td class="num">${num(v.times_sent)}</td>
-          <td class="num">${num(v.replied)}</td>
-          <td class="num">${v.reply_rate_pct!=null?v.reply_rate_pct+'%':'&ndash;'}</td></tr>`).join('')}
-        </tbody></table>`:`<p class="hint">Nothing sent yet.</p>`}
-    </div>
-
-    <p class="hint">Send-through is how often a generated draft actually gets sent. A low number
-    means the copy needs work rather than the outreach failing.</p>
+    <div class="block"><h2 class="sec">Recent outreach</h2>${recentTable(m.recent)}</div>` : ''}
   </main>`;
+}
+
+async function saveKpiTargets(){
+  if(S.kpiBusy) return;
+  S.kpiBusy=true; S.kpiErr=''; render();
+  try{
+    const tgts = [...document.querySelectorAll('[data-tgt]')].map(el=>({
+      metric_key: el.dataset.tgt,
+      quarter_target: Number(String(el.value).replace(/[^0-9.\-]/g,'')) || 0
+    }));
+    for(const t of tgts){
+      const { error } = await sb.from('kpi_targets')
+        .update({ quarter_target: t.quarter_target, updated_at: new Date().toISOString() })
+        .eq('metric_key', t.metric_key);
+      if(error) throw error;
+    }
+    const mans = [...document.querySelectorAll('[data-man]')].map(el=>({
+      quarter: Number(el.dataset.man),
+      value: Number(String(el.value).replace(/[^0-9.\-]/g,'')) || 0
+    }));
+    for(const mv of mans){
+      const { error } = await sb.from('kpi_manual')
+        .update({ value: mv.value, updated_at: new Date().toISOString() })
+        .eq('metric_key','competitive_bid').eq('year', S.kpi.year).eq('quarter', mv.quarter);
+      if(error) throw error;
+    }
+    S.kpiEdit=false;
+    S.kpiNote='Targets saved.';
+    S.loaded.kpis=false;
+    await loadKpis();
+  }catch(err){ S.kpiErr = err.message||String(err); }
+  finally{ S.kpiBusy=false; render(); }
 }
 
 /* ================= my day ================= */
@@ -1498,6 +1642,7 @@ async function delTask(id){
 
 function exportCsv(){
   const m = S.metrics; if(!m) return;
+  const k = S.kpi;
   const rows = [];
   const push = (...cells) => rows.push(cells.map(c => {
     const s = String(c ?? '');
@@ -1506,6 +1651,17 @@ function exportCsv(){
 
   push('HAGGERTY marketing summary', prettyDate());
   push('');
+  if(k && k.score.length){
+    push('Pat scorecard, ' + k.year);
+    push('Metric','Quarter target','Year target','Year to date','% of year','% of pace');
+    k.score.forEach(r=>push(r.label, r.quarter_target, r.year_target,
+      r.ytd_actual, r.pct_of_year, r.pct_of_pace));
+    push('');
+    push('Pipeline added by quarter');
+    push('Quarter','Goal','Added','Deals');
+    k.quarters.forEach(q=>push('Q'+q.quarter, q.goal, q.added, q.deals));
+    push('');
+  }
   push('Headline');
   const h = m.head;
   push('Sent 30 days', h.sent_30d); push('Replies 30 days', h.replied_30d);
