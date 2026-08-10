@@ -233,7 +233,7 @@
 <div id="app"></div>
 
 <script type="module">
-import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+import { leadsPage, mountLeads } from './leads.js';
 
 const SUPABASE_URL = 'https://ekatzukprjpisdiwubjq.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_bdyRB7Mx0BKzNj1EcYlRCg_8JLDXEIL';
@@ -253,7 +253,7 @@ const KIND = { meeting:'Meeting', networking:'Event', site_visit:'Site visit',
 
 const PAGES = [
   ['today','Today'], ['outreach','Outreach'], ['calendar','Calendar'],
-  ['pipeline','Pipeline'], ['kpis','KPIs'], ['myday','My Day']
+  ['pipeline','Pipeline'], ['kpis','KPIs'], ['myday','My Day'], ['leads','Leads']
 ];
 
 const S = {
@@ -427,6 +427,7 @@ function render(){
   app.innerHTML = topbar() + inner;
   wireChrome();
   wirePage();
+  if (S.page==='leads') mountLeads (sb);
 }
 
 function wirePage(){
