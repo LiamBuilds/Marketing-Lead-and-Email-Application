@@ -222,9 +222,13 @@
   .bcol-body{padding:8px;display:flex;flex-direction:column;gap:7px;
              max-height:60vh;overflow-y:auto}
   .bcol-body .none{font-size:12px;color:var(--slate);font-style:italic;padding:6px 2px}
-  .dcard{display:block;width:100%;text-align:left;background:var(--card);cursor:pointer;
+  .dcard{display:block;width:100%;text-align:left;background:var(--card);cursor:grab;
          border:1px solid var(--rule);border-left:3px solid var(--rule);padding:9px 10px}
   .dcard:hover{background:#FBFAF8}
+  .dcard:active{cursor:grabbing}
+  .dcard.dragging{opacity:.35}
+  .bcol.over{outline:2px solid var(--orange);outline-offset:-2px;background:var(--orange-tint)}
+  .bcol.over .bcol-body{min-height:60px}
   .dcard.mine{border-left-color:var(--orange)}
   .dcard h5{font-size:13.5px;font-weight:600;margin:0 0 2px;line-height:1.3}
   .dcard .who{font-size:12px;color:var(--slate);line-height:1.35}
@@ -1061,7 +1065,7 @@ function pageBoard(){
 
   const columns = cols.map(c=>{
     const cards = deals.filter(d=>d.stage_id===c.stage_id);
-    return `<div class="bcol">
+    return `<div class="bcol" data-drop="${c.stage_id}">
       <div class="bcol-head">
         <h4>${esc(c.stage)}</h4>
         <span class="m">${money(c.open_value)} &middot; ${num(c.open_deals)} deal${Number(c.open_deals)===1?'':'s'}</span>
@@ -1087,7 +1091,8 @@ function pageBoard(){
                   : `<p class="hint">No stages found for this pipeline. Run the Deal Reference Backfill.</p>`}
 
     <p class="hint">Open deals only. An orange edge marks Pat's, which are the ones his scorecard counts.
-    Changes here write to Pipedrive first.</p>
+    Drag a card to another column to move it, or click it for won, lost and the Pipedrive link.
+    Dragging needs a mouse, so on a phone use the card. Changes write to Pipedrive first.</p>
   </main>${S.dealId?dealSheet():''}${S.addOpen?addSheet():''}`;
 }
 
@@ -1103,7 +1108,8 @@ function boardHead(){
 
 function dealCard(d){
   const who = [d.company_name, d.contact_name].filter(Boolean).join(', ');
-  return `<button class="dcard ${d.is_mine?'mine':''}" data-deal="${esc(d.pipedrive_deal_id)}">
+  return `<button class="dcard ${d.is_mine?'mine':''}" draggable="true"
+    data-deal="${esc(d.pipedrive_deal_id)}" data-stage="${esc(d.stage_id)}">
     <h5>${esc(d.title||'Untitled')}</h5>
     ${who?`<span class="who">${esc(who)}</span>`:''}
     <span class="val">${money(d.value)}</span>
@@ -1193,7 +1199,9 @@ function addSheet(){
 
 async function moveDeal(stageId, status){
   if(S.dealBusy) return;
-  S.dealBusy=true; S.dealErr=''; S.kpiNote=''; render();
+  S.dealBusy=true; S.dealErr='';
+  S.kpiNote = status ? 'Marking ' + status + ' in Pipedrive\u2026' : 'Moving in Pipedrive\u2026';
+  render();
   try{
     const body = { pipedrive_deal_id: Number(S.dealId) };
     if(stageId) body.stage_id = Number(stageId);
@@ -1257,7 +1265,51 @@ function searchOrgs(q){
   }, 350);
 }
 
+let dragDealId = null;
+
+function wireDrag(){
+  document.querySelectorAll('[data-deal]').forEach(el=>{
+    el.addEventListener('dragstart', e=>{
+      dragDealId = el.dataset.deal;
+      el.classList.add('dragging');
+      if(e.dataTransfer){
+        e.dataTransfer.effectAllowed = 'move';
+        // Firefox refuses to start a drag unless something is set.
+        e.dataTransfer.setData('text/plain', dragDealId);
+      }
+    });
+    el.addEventListener('dragend', ()=>{ el.classList.remove('dragging'); dragDealId = null; });
+  });
+
+  document.querySelectorAll('[data-drop]').forEach(col=>{
+    col.addEventListener('dragover', e=>{
+      e.preventDefault();
+      if(e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+      col.classList.add('over');
+    });
+    // dragleave fires when crossing onto a child, so only clear the
+    // highlight when the pointer has actually left the column.
+    col.addEventListener('dragleave', e=>{
+      if(!col.contains(e.relatedTarget)) col.classList.remove('over');
+    });
+    col.addEventListener('drop', e=>{
+      e.preventDefault();
+      col.classList.remove('over');
+      const id = dragDealId || (e.dataTransfer ? e.dataTransfer.getData('text/plain') : '');
+      const stage = col.dataset.drop;
+      if(!id || !stage) return;
+      const card = document.querySelector('[data-deal="'+id+'"]');
+      // Dropping a card back where it started is not a change, and
+      // sending it would write a pointless update to Pipedrive.
+      if(card && String(card.dataset.stage) === String(stage)) return;
+      S.dealId = id;
+      moveDeal(stage, null);
+    });
+  });
+}
+
 function wireBoard(){
+  wireDrag();
   document.querySelectorAll('[data-kview]').forEach(el=>
     el.addEventListener('click',()=>{ S.kpiView = el.dataset.kview; S.kpiNote=''; S.dealErr=''; render(); }));
 
