@@ -233,8 +233,9 @@
 <div id="app"></div>
 
 <script type="module">
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 import { leadsPage, mountLeads } from './leads.js';
-
+  
 const SUPABASE_URL = 'https://ekatzukprjpisdiwubjq.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_bdyRB7Mx0BKzNj1EcYlRCg_8JLDXEIL';
 const ACTION_URL   = 'https://haggertybuilds.app.n8n.cloud/webhook/haggerty-outreach-action';
