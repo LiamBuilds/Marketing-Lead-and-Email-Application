@@ -206,6 +206,33 @@
            margin-bottom:16px;align-items:end}
   @media (max-width:700px){.taskbar{grid-template-columns:1fr}}
 
+  /* ---------- deal board ---------- */
+  .kswitch{display:flex;gap:1px}
+  .kswitch button{font-family:var(--display);text-transform:uppercase;letter-spacing:.08em;
+                  font-weight:600;font-size:13px;background:none;border:1px solid var(--rule);
+                  color:var(--slate);padding:6px 14px;cursor:pointer}
+  .kswitch button.on{background:var(--ink);border-color:var(--ink);color:#fff}
+  .bwrap{display:flex;gap:10px;overflow-x:auto;align-items:flex-start;padding-bottom:16px}
+  .bcol{flex:0 0 244px;background:var(--wash);border:1px solid var(--rule)}
+  .bcol-head{padding:9px 11px 8px;background:var(--card);border-bottom:1px solid var(--rule)}
+  .bcol-head h4{font-family:var(--display);text-transform:uppercase;letter-spacing:.05em;
+                font-size:13.5px;font-weight:700;margin:0;white-space:nowrap;
+                overflow:hidden;text-overflow:ellipsis}
+  .bcol-head .m{font-family:var(--mono);font-size:11px;color:var(--slate);display:block;margin-top:1px}
+  .bcol-body{padding:8px;display:flex;flex-direction:column;gap:7px;
+             max-height:60vh;overflow-y:auto}
+  .bcol-body .none{font-size:12px;color:var(--slate);font-style:italic;padding:6px 2px}
+  .dcard{display:block;width:100%;text-align:left;background:var(--card);cursor:pointer;
+         border:1px solid var(--rule);border-left:3px solid var(--rule);padding:9px 10px}
+  .dcard:hover{background:#FBFAF8}
+  .dcard.mine{border-left-color:var(--orange)}
+  .dcard h5{font-size:13.5px;font-weight:600;margin:0 0 2px;line-height:1.3}
+  .dcard .who{font-size:12px;color:var(--slate);line-height:1.35}
+  .dcard .val{font-family:var(--mono);font-size:12px;margin-top:5px}
+  .orghit{display:block;width:100%;text-align:left;background:none;border:0;
+          border-bottom:1px solid var(--rule-soft);padding:7px 9px;cursor:pointer;font-size:13px}
+  .orghit:hover{background:var(--wash)}
+
   /* ---------- sector strip ---------- */
   .sectorbar{display:flex;gap:8px;overflow-x:auto;padding:11px 26px;
              background:var(--card);border-bottom:1px solid var(--rule)}
@@ -308,6 +335,8 @@ const GENERATE_URL = 'https://haggertybuilds.app.n8n.cloud/webhook/haggerty-gene
 const IMPORT_URL   = 'https://haggertybuilds.app.n8n.cloud/webhook/haggerty-lead-import';
 const APPROVE_URL  = 'https://haggertybuilds.app.n8n.cloud/webhook/haggerty-lead-approve';
 const REJECT_URL   = 'https://haggertybuilds.app.n8n.cloud/webhook/haggerty-lead-reject';
+const MOVE_URL     = 'https://haggertybuilds.app.n8n.cloud/webhook/haggerty-deal-move';
+const ADDDEAL_URL  = 'https://haggertybuilds.app.n8n.cloud/webhook/haggerty-deal-add';
 
 /* Approving creates an organisation, a person and a note per contact, in
    sequence, behind one request. Forty leads in a single POST is a hundred
@@ -342,7 +371,10 @@ const S = {
   impOpen:false, impBusy:false, impRows:null, impFile:'', impName:'',
   impVert:'', impErr:'',
   /* kpis */
-  kpi:null, kpiEdit:false, kpiBusy:false, kpiErr:'', kpiNote:''
+  kpi:null, kpiEdit:false, kpiBusy:false, kpiErr:'', kpiNote:'',
+  /* board */
+  kpiView:'scorecard', boardPipe:null, dealId:null, dealBusy:false, dealErr:'',
+  addOpen:false, addForm:{}, orgQuery:'', orgHits:[], orgBusy:false
 };
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;')
@@ -464,7 +496,8 @@ async function loadTasks(){
 
 async function loadKpis(){
   const yr = new Date().getFullYear();
-  const [score, quarters, monthly, outcomes, open, stages, targets, manual] = await Promise.all([
+  const [score, quarters, monthly, outcomes, open, stages, targets, manual,
+         cols, board, users] = await Promise.all([
     sb.from('v_kpi_scorecard').select('*').order('sort_order'),
     sb.from('v_kpi_quarters').select('*').order('quarter'),
     sb.from('v_kpi_monthly').select('*').order('month'),
@@ -472,14 +505,22 @@ async function loadKpis(){
     sb.from('v_kpi_open').select('*').single(),
     sb.from('v_kpi_stages').select('*').order('order_nr'),
     sb.from('kpi_targets').select('*').order('sort_order'),
-    sb.from('kpi_manual').select('*').eq('year', yr).order('quarter')
+    sb.from('kpi_manual').select('*').eq('year', yr).order('quarter'),
+    sb.from('v_board_columns').select('*').order('order_nr'),
+    sb.from('v_deal_board').select('*').eq('status','open'),
+    sb.from('pipedrive_users').select('*').eq('active', true)
   ]);
   S.kpi = {
     score: score.data || [], quarters: quarters.data || [],
     monthly: monthly.data || [], outcomes: outcomes.data || {},
     open: open.data || {}, stages: stages.data || [],
-    targets: targets.data || [], manual: manual.data || [], year: yr
+    targets: targets.data || [], manual: manual.data || [], year: yr,
+    cols: cols.data || [], board: board.data || [], users: users.data || []
   };
+  if(!S.boardPipe){
+    const pref = (S.kpi.targets.find(t=>t.pipeline_name)||{}).pipeline_name;
+    S.boardPipe = pref || (S.kpi.cols[0]||{}).pipeline_name || null;
+  }
   S.loaded.kpis = true;
 }
 
@@ -602,6 +643,7 @@ function wirePage(){
   if(kc) kc.addEventListener('click', ()=>{ S.kpiEdit=false; S.kpiErr=''; render(); });
   const ks = document.getElementById('kpiSave');
   if(ks) ks.addEventListener('click', saveKpiTargets);
+  wireBoard();
   wireLeads();
 }
 
@@ -833,6 +875,7 @@ function pageKpis(){
   const k = S.kpi, m = S.metrics;
   const o = k.outcomes || {}, op = k.open || {};
   const qtr = Math.floor(new Date().getMonth()/3) + 1;
+  if(S.kpiView === 'board') return pageBoard();
 
   /* ---- scorecard ---- */
   const score = k.score.map(r=>{
@@ -912,7 +955,11 @@ function pageKpis(){
 
   return `<main class="page">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
-      <span class="eyebrow" style="flex:1;min-width:180px">Pat Dobson &middot; ${k.year} &middot; Q${qtr} to date</span>
+      <div class="kswitch">
+        <button data-kview="scorecard" class="${S.kpiView==='scorecard'?'on':''}">Scorecard</button>
+        <button data-kview="board" class="${S.kpiView==='board'?'on':''}">Board</button>
+      </div>
+      <span class="eyebrow" style="flex:1;min-width:150px">Pat Dobson &middot; ${k.year} &middot; Q${qtr} to date</span>
       <button class="btn small ghost" id="kpiEdit">${S.kpiEdit?'Hide targets':'Edit targets'}</button>
       <button class="btn small ghost" id="exportCsv">Export CSV</button>
       <button class="btn small ghost" id="printPage">Print</button>
@@ -993,6 +1040,280 @@ function pageKpis(){
 
     <div class="block"><h2 class="sec">Recent outreach</h2>${recentTable(m.recent)}</div>` : ''}
   </main>`;
+}
+
+function pipeNames(){
+  const set = [];
+  (S.kpi.cols||[]).forEach(c=>{ if(c.pipeline_name && set.indexOf(c.pipeline_name)===-1) set.push(c.pipeline_name); });
+  return set;
+}
+
+function pageBoard(){
+  const k = S.kpi;
+  const pipe = S.boardPipe;
+  const cols = (k.cols||[]).filter(c=>c.pipeline_name===pipe);
+  const deals = (k.board||[]).filter(d=>d.pipeline_name===pipe);
+  const mine = deals.filter(d=>d.is_mine).length;
+  const total = deals.reduce((a,d)=>a+Number(d.value||0),0);
+
+  const pipeSel = pipeNames().map(p=>
+    `<option value="${esc(p)}" ${p===pipe?'selected':''}>${esc(p)}</option>`).join('');
+
+  const columns = cols.map(c=>{
+    const cards = deals.filter(d=>d.stage_id===c.stage_id);
+    return `<div class="bcol">
+      <div class="bcol-head">
+        <h4>${esc(c.stage)}</h4>
+        <span class="m">${money(c.open_value)} &middot; ${num(c.open_deals)} deal${Number(c.open_deals)===1?'':'s'}</span>
+      </div>
+      <div class="bcol-body">
+        ${cards.length ? cards.map(dealCard).join('') : '<span class="none">Empty</span>'}
+      </div>
+    </div>`;
+  }).join('');
+
+  return `<main class="page wide">
+    ${boardHead()}
+    ${S.kpiNote?`<div class="done-banner" style="margin-bottom:14px"><p style="margin:0">${esc(S.kpiNote)}</p></div>`:''}
+    ${S.dealErr?`<p class="hint err" style="margin-bottom:14px">${esc(S.dealErr)}</p>`:''}
+
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+      <select id="bPipe" style="width:auto;min-width:250px">${pipeSel}</select>
+      <span class="tally">${num(deals.length)} open &middot; ${money(total)}${mine?` &middot; <b>${mine}</b> Pat's`:''}</span>
+      <button class="btn small" id="bAdd" style="margin-left:auto">Add deal</button>
+    </div>
+
+    ${cols.length ? `<div class="bwrap">${columns}</div>`
+                  : `<p class="hint">No stages found for this pipeline. Run the Deal Reference Backfill.</p>`}
+
+    <p class="hint">Open deals only. An orange edge marks Pat's, which are the ones his scorecard counts.
+    Changes here write to Pipedrive first.</p>
+  </main>${S.dealId?dealSheet():''}${S.addOpen?addSheet():''}`;
+}
+
+function boardHead(){
+  return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+    <div class="kswitch">
+      <button data-kview="scorecard" class="${S.kpiView==='scorecard'?'on':''}">Scorecard</button>
+      <button data-kview="board" class="${S.kpiView==='board'?'on':''}">Board</button>
+    </div>
+    <span class="spacer"></span>
+  </div>`;
+}
+
+function dealCard(d){
+  const who = [d.company_name, d.contact_name].filter(Boolean).join(', ');
+  return `<button class="dcard ${d.is_mine?'mine':''}" data-deal="${esc(d.pipedrive_deal_id)}">
+    <h5>${esc(d.title||'Untitled')}</h5>
+    ${who?`<span class="who">${esc(who)}</span>`:''}
+    <span class="val">${money(d.value)}</span>
+  </button>`;
+}
+
+function dealSheet(){
+  const d = (S.kpi.board||[]).find(x=>String(x.pipedrive_deal_id)===String(S.dealId));
+  if(!d) return '';
+  const cols = (S.kpi.cols||[]).filter(c=>c.pipeline_name===d.pipeline_name);
+  const opts = cols.map(c=>
+    `<option value="${c.stage_id}" ${c.stage_id===d.stage_id?'selected':''}>${esc(c.stage)}</option>`).join('');
+
+  return `<div class="sheet" role="dialog" aria-modal="true" aria-label="Deal">
+    <div class="sheet-in">
+      <div class="sheet-head">
+        <h2>${esc(d.title||'Untitled')}</h2>
+        <button class="linkbtn" data-dclose="1">Close</button>
+      </div>
+      <div class="chips" style="margin-top:8px">
+        ${d.company_name?`<span class="chip">${esc(d.company_name)}</span>`:''}
+        ${d.contact_name?`<span class="chip">${esc(d.contact_name)}</span>`:''}
+        ${d.owner_name?`<span class="chip ${d.is_mine?'hot':''}">${esc(d.owner_name)}</span>`:''}
+        <span class="chip good">${money(d.value)}</span>
+      </div>
+
+      <div class="field"><label for="dStage">Stage</label>
+        <select id="dStage">${opts}</select></div>
+
+      <div class="actions">
+        <button class="btn" id="dMove" ${S.dealBusy?'disabled':''}>${S.dealBusy?'Saving&hellip;':'Move'}</button>
+        <button class="btn ghost small" id="dWon" ${S.dealBusy?'disabled':''}>Mark won</button>
+        <button class="btn ghost small" id="dLost" ${S.dealBusy?'disabled':''}>Mark lost</button>
+      </div>
+      ${S.dealErr?`<p class="hint err">${esc(S.dealErr)}</p>`:''}
+
+      <p class="hint" style="margin-top:16px">
+        <a href="https://haggerty.pipedrive.com/deal/${esc(d.pipedrive_deal_id)}" target="_blank" rel="noopener">Open in Pipedrive</a>
+        for notes, activities and everything else.</p>
+    </div>
+  </div>`;
+}
+
+function addSheet(){
+  const f = S.addForm || {};
+  const cols = (S.kpi.cols||[]).filter(c=>c.pipeline_name===S.boardPipe);
+  const opts = cols.map(c=>
+    `<option value="${c.stage_id}" ${String(c.stage_id)===String(f.stage_id)?'selected':''}>${esc(c.stage)}</option>`).join('');
+  const users = (S.kpi.users||[]).map(u=>
+    `<option value="${u.user_id}" ${String(u.user_id)===String(f.user_id)?'selected':''}>${esc(u.name)}</option>`).join('');
+
+  return `<div class="sheet" role="dialog" aria-modal="true" aria-label="New deal">
+    <div class="sheet-in">
+      <div class="sheet-head"><h2>New deal</h2>
+        <button class="linkbtn" data-aclose="1">Close</button></div>
+
+      <div class="field"><label for="aTitle">Title</label>
+        <input type="text" id="aTitle" value="${esc(f.title||'')}" placeholder="Rocklin Public Market"/></div>
+
+      <div class="field"><label for="aStage">Stage</label>
+        <select id="aStage">${opts}</select></div>
+
+      <div class="field"><label for="aValue">Value</label>
+        <input type="text" id="aValue" value="${esc(f.value||'')}" placeholder="Leave blank if unknown"/></div>
+
+      <div class="field"><label for="aOwner">Owner</label>
+        <select id="aOwner">${users}</select></div>
+
+      <div class="field"><label for="aOrg">Company</label>
+        <input type="text" id="aOrg" value="${esc(f.org_name||'')}"
+               placeholder="Type three letters to search Pipedrive"/></div>
+      ${f.org_id?`<p class="hint">Linked to <b>${esc(f.org_name)}</b>. <button class="linkbtn" id="aOrgClear">Clear</button></p>`:''}
+      ${(!f.org_id && S.orgHits.length)?`<div style="border:1px solid var(--rule);max-height:180px;overflow:auto">
+        ${S.orgHits.map(o=>`<button class="orghit" data-org="${o.pipedrive_org_id}" data-orgname="${esc(o.name)}">
+          ${esc(o.name)}${o.city?` <span class="muted">${esc(o.city)}${o.state?', '+esc(o.state):''}</span>`:''}</button>`).join('')}
+      </div>`:''}
+      ${(!f.org_id && S.orgBusy)?'<p class="hint">Searching&hellip;</p>':''}
+
+      <div class="sheet-foot">
+        <button class="btn" id="aSave" ${S.dealBusy?'disabled':''}>${S.dealBusy?'Creating&hellip;':'Create in Pipedrive'}</button>
+        ${S.dealErr?`<p class="hint err" style="margin-top:8px">${esc(S.dealErr)}</p>`:''}
+        <p class="hint" style="margin-top:8px">Created in Pipedrive first, then mirrored here. Company is optional.</p>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function moveDeal(stageId, status){
+  if(S.dealBusy) return;
+  S.dealBusy=true; S.dealErr=''; S.kpiNote=''; render();
+  try{
+    const body = { pipedrive_deal_id: Number(S.dealId) };
+    if(stageId) body.stage_id = Number(stageId);
+    if(status)  body.status = status;
+    const res = await fetch(MOVE_URL, { method:'POST',
+      headers:{'content-type':'application/json'}, body: JSON.stringify(body) });
+    const out = await res.json().catch(()=>({}));
+    if(!res.ok || out.ok===false) throw new Error(out.message || out.error || 'Pipedrive returned ' + res.status);
+    S.kpiNote = status
+      ? `${out.title||'Deal'} marked ${status}.`
+      : `${out.title||'Deal'} moved to ${out.stage_name||'the new stage'}.`;
+    S.dealId=null;
+    S.loaded.kpis=false; await loadKpis();
+  }catch(err){ S.dealErr = err.message||String(err); }
+  finally{ S.dealBusy=false; render(); }
+}
+
+async function createDeal(){
+  if(S.dealBusy) return;
+  const f = S.addForm || {};
+  if(!String(f.title||'').trim()){ S.dealErr='A deal needs a title.'; return render(); }
+  if(!f.stage_id){ S.dealErr='Pick a stage.'; return render(); }
+  S.dealBusy=true; S.dealErr=''; S.kpiNote=''; render();
+  try{
+    const res = await fetch(ADDDEAL_URL, { method:'POST',
+      headers:{'content-type':'application/json'},
+      body: JSON.stringify({
+        title: String(f.title).trim(),
+        stage_id: Number(f.stage_id),
+        value: f.value || null,
+        org_id: f.org_id || null,
+        user_id: f.user_id || null
+      }) });
+    const out = await res.json().catch(()=>({}));
+    if(!res.ok || out.ok===false) throw new Error(out.message || out.error || 'Pipedrive returned ' + res.status);
+    S.kpiNote = `${out.title||'Deal'} created in ${out.stage_name||'the pipeline'}.`;
+    S.addOpen=false; S.addForm={}; S.orgHits=[];
+    S.loaded.kpis=false; await loadKpis();
+  }catch(err){ S.dealErr = err.message||String(err); }
+  finally{ S.dealBusy=false; render(); }
+}
+
+let orgTimer = null;
+function searchOrgs(q){
+  clearTimeout(orgTimer);
+  if(String(q||'').trim().length < 3){ S.orgHits=[]; S.orgBusy=false; return; }
+  S.orgBusy=true;
+  orgTimer = setTimeout(async ()=>{
+    try{
+      const { data } = await sb.from('companies')
+        .select('pipedrive_org_id,name,city,state')
+        .not('pipedrive_org_id','is',null)
+        .ilike('name', '%'+String(q).trim()+'%')
+        .limit(8);
+      S.orgHits = data || [];
+    }catch{ S.orgHits = []; }
+    S.orgBusy=false;
+    render();
+    const el = document.getElementById('aOrg');
+    if(el){ el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+  }, 350);
+}
+
+function wireBoard(){
+  document.querySelectorAll('[data-kview]').forEach(el=>
+    el.addEventListener('click',()=>{ S.kpiView = el.dataset.kview; S.kpiNote=''; S.dealErr=''; render(); }));
+
+  const bp = document.getElementById('bPipe');
+  if(bp) bp.addEventListener('change',()=>{ S.boardPipe = bp.value; render(); });
+
+  document.querySelectorAll('[data-deal]').forEach(el=>
+    el.addEventListener('click',()=>{ S.dealId = el.dataset.deal; S.dealErr=''; render(); }));
+
+  const dc = document.querySelector('[data-dclose]');
+  if(dc) dc.addEventListener('click',()=>{ S.dealId=null; S.dealErr=''; render(); });
+
+  const dm = document.getElementById('dMove');
+  if(dm) dm.addEventListener('click',()=>{
+    const sel = document.getElementById('dStage');
+    moveDeal(sel ? sel.value : null, null);
+  });
+  const dw = document.getElementById('dWon');
+  if(dw) dw.addEventListener('click',()=>{ if(confirm('Mark this deal won in Pipedrive?')) moveDeal(null,'won'); });
+  const dl = document.getElementById('dLost');
+  if(dl) dl.addEventListener('click',()=>{ if(confirm('Mark this deal lost in Pipedrive?')) moveDeal(null,'lost'); });
+
+  const ba = document.getElementById('bAdd');
+  if(ba) ba.addEventListener('click',()=>{
+    const cols = (S.kpi.cols||[]).filter(c=>c.pipeline_name===S.boardPipe);
+    const me = (S.kpi.users||[]).find(u=>u.name===(S.kpi.targets[0]||{}).owner) || null;
+    S.addForm = { stage_id: (cols[0]||{}).stage_id, user_id: me?me.user_id:((S.kpi.users||[])[0]||{}).user_id };
+    S.addOpen=true; S.dealErr=''; S.orgHits=[]; render();
+  });
+  const ac = document.querySelector('[data-aclose]');
+  if(ac) ac.addEventListener('click',()=>{ S.addOpen=false; S.dealErr=''; render(); });
+
+  const at = document.getElementById('aTitle');
+  if(at) at.addEventListener('input',()=>{ S.addForm.title = at.value; });
+  const av = document.getElementById('aValue');
+  if(av) av.addEventListener('input',()=>{ S.addForm.value = av.value; });
+  const as_ = document.getElementById('aStage');
+  if(as_) as_.addEventListener('change',()=>{ S.addForm.stage_id = as_.value; });
+  const ao = document.getElementById('aOwner');
+  if(ao) ao.addEventListener('change',()=>{ S.addForm.user_id = ao.value; });
+
+  const org = document.getElementById('aOrg');
+  if(org) org.addEventListener('input',()=>{
+    S.addForm.org_name = org.value; S.addForm.org_id = null; searchOrgs(org.value);
+  });
+  document.querySelectorAll('[data-org]').forEach(el=>
+    el.addEventListener('click',()=>{
+      S.addForm.org_id = el.dataset.org;
+      S.addForm.org_name = el.dataset.orgname;
+      S.orgHits=[]; render();
+    }));
+  const oc = document.getElementById('aOrgClear');
+  if(oc) oc.addEventListener('click',()=>{ S.addForm.org_id=null; S.addForm.org_name=''; S.orgHits=[]; render(); });
+
+  const asv = document.getElementById('aSave');
+  if(asv) asv.addEventListener('click', createDeal);
 }
 
 async function saveKpiTargets(){
