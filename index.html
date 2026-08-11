@@ -206,6 +206,23 @@
            margin-bottom:16px;align-items:end}
   @media (max-width:700px){.taskbar{grid-template-columns:1fr}}
 
+  /* ---------- warnings ---------- */
+  .warn{background:var(--card);border:1px solid var(--rule);
+        border-left:3px solid var(--red);padding:10px 13px;margin-bottom:8px;
+        font-size:13.5px;color:var(--grey)}
+  .warn b{color:var(--red)}
+  .warn.soft{border-left-color:var(--orange)}
+  .warn.soft b{color:#8A4A05}
+  .warn.info{border-left-color:var(--slate)}
+  .warn.info b{color:var(--ink)}
+  .warn .when{font-family:var(--mono);font-size:11.5px;color:var(--slate)}
+  .prev{margin-top:14px;border:1px solid var(--rule);background:var(--card)}
+  .prev-head{padding:9px 13px;border-bottom:1px solid var(--rule-soft);
+             display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .prev-body{padding:4px 13px 10px;max-height:280px;overflow-y:auto;
+             font-size:13px;color:#555}
+  .prev-body p{margin:0 0 10px}
+
   /* ---------- deal board ---------- */
   .kswitch{display:flex;gap:1px}
   .kswitch button{font-family:var(--display);text-transform:uppercase;letter-spacing:.08em;
@@ -625,6 +642,8 @@ function wirePage(){
     el.addEventListener('click',()=>{ const id=el.dataset.toggle; S.open[id]=!S.open[id]; render(); }));
   document.querySelectorAll('[data-use]').forEach(el=>
     el.addEventListener('click',()=>useDraft(el.dataset.use)));
+  document.querySelectorAll('[data-stop]').forEach(el=>
+    el.addEventListener('click',()=>stopFollowUp(el.dataset.stop, el.dataset.stopnow === '1')));
   document.querySelectorAll('[data-gen]').forEach(el=>
     el.addEventListener('click',()=>generate(Number(el.dataset.gen), 5)));
   const all = document.getElementById('genAll');
@@ -707,6 +726,88 @@ function rowHtml(r,i){
     <span class="org">${esc(r.company_name||r.vertical)}</span></button>`;
 }
 
+function warnBlock(r){
+  const w = [];
+
+  // Ordered by how badly it would land, not by how likely it is.
+  if(r.is_internal){
+    w.push(`<div class="warn"><b>This is a HAGGERTY address.</b>
+      Nobody internal should be on this board. Worth checking the import
+      rather than the contact.</div>`);
+  }
+
+  if(r.meeting_subject){
+    const when = r.meeting_at ? new Date(r.meeting_at) : null;
+    const past = when && when < new Date();
+    const day = when ? when.toLocaleDateString('en-US',
+      {weekday:'long', month:'short', day:'numeric'}) : '';
+    w.push(`<div class="warn"><b>Pat ${past?'met':'is meeting'} ${
+      r.meeting_is_them ? 'them' : 'someone at this company'} ${past?'on':''} ${esc(day)}.</b>
+      <span class="when">${esc(r.meeting_subject)}</span><br>
+      A cold introduction ${past?'after that meeting':'before that meeting'} would read badly.</div>`);
+  }
+
+  if(r.open_deal_title){
+    w.push(`<div class="warn"><b>There is an open deal with this company.</b>
+      ${esc(r.open_deal_title)}${r.open_deal_stage?` <span class="when">${esc(r.open_deal_stage)}</span>`:''}<br>
+      Asking to be added to their bid list says nobody here talks to anyone.</div>`);
+  }
+
+  if(r.colleague_emailed_name){
+    const d = Number(r.colleague_emailed_days_ago);
+    w.push(`<div class="warn soft"><b>${esc(r.colleague_emailed_name)} at the same company was emailed ${
+      d === 0 ? 'today' : d === 1 ? 'yesterday' : d + ' days ago'}.</b><br>
+      They forward each other's mail. Two similar notes from Pat read as the mail merge they are.</div>`);
+  }
+
+  if(r.maybe_competitor){
+    w.push(`<div class="warn soft"><b>Possibly a competing contractor.</b>
+      The industry data mentions general contracting. Subcontractors look the same in that field,
+      so this is worth a look rather than an assumption.</div>`);
+  }
+
+  if(r.follow_up_stopped_at){
+    w.push(`<div class="warn info"><b>Follow-ups are stopped for this contact.</b>
+      ${r.follow_up_stopped_reason?esc(r.follow_up_stopped_reason)+'. ':''}Sending here is still fine,
+      but no automatic nudge will go out.</div>`);
+  }
+
+  return w.join('');
+}
+
+function prevEmail(r){
+  if(!r.parent_send_id || !r.parent_body_html) return '';
+  const d = Number(r.parent_days_ago);
+  const open = !!S.open['prev-' + r.queue_id];
+  return `<div class="prev">
+    <div class="prev-head">
+      <span class="eyebrow" style="flex:1">What Pat sent ${
+        d === 1 ? 'yesterday' : d + ' days ago'}</span>
+      <button class="linkbtn" data-toggle="prev-${esc(r.queue_id)}">${open?'Hide':'Read it'}</button>
+    </div>
+    ${open?`<div class="prev-body">${r.parent_body_html}</div>`:''}
+  </div>`;
+}
+
+async function stopFollowUp(contactId, stop){
+  let reason = '';
+  if(stop){
+    reason = prompt('Why stop following up? Optional, but useful in a month.\n\nFor example: spoke on the phone, or asked not to be contacted.') || '';
+    if(reason === null) return;
+  }
+  S.busy = true; S.err = ''; render();
+  try{
+    const { error } = await sb.from('contacts').update({
+      follow_up_stopped_at: stop ? new Date().toISOString() : null,
+      follow_up_stopped_reason: stop ? (reason.trim() || null) : null,
+      updated_at: new Date().toISOString()
+    }).eq('id', contactId);
+    if(error) throw error;
+    await loadBoard();
+  }catch(err){ S.err = err.message || String(err); }
+  finally{ S.busy = false; render(); }
+}
+
 function detailHtml(){
   const r = S.board.find(x=>x.queue_id===S.activeId);
   if(!r) return '';
@@ -721,10 +822,13 @@ function detailHtml(){
     r.company_website && `<a class="chip" href="${esc(r.company_website)}" target="_blank" rel="noopener">Website</a>`
   ].filter(Boolean).join('');
   const ctx = r.company_description || r.company_keywords || r.company_industry;
+  const isFollow = Number(r.touch) > 1;
   const head = `<div class="who"><h1>${esc(r.full_name||'Unknown contact')}</h1>
     <div class="role">${esc(r.title||'No title on file')}</div>
     <div class="org-line">${esc(r.company_name||'')} &middot; <span class="mono">${esc(r.email)}</span></div>
-    <div class="chips">${chips}</div></div>
+    <div class="chips">${chips}${isFollow?`<span class="chip hot">Follow-up ${esc(r.touch)}</span>`:''}</div></div>
+    ${warnBlock(r) ? `<div style="margin-top:16px">${warnBlock(r)}</div>` : ''}
+    ${prevEmail(r)}
     <div class="panelbox"><span class="eyebrow">What we know</span>
     ${ctx?`${r.company_industry?`<p><b>Industry</b> ${esc(r.company_industry)}</p>`:''}
       ${r.company_description?`<p>${esc(r.company_description)}</p>`:''}
@@ -738,7 +842,12 @@ function detailHtml(){
       </div>`;
   }
   if(!drafts.length) return head + `<div class="panelbox"><p class="none">No drafts generated for this contact yet.</p></div>`;
-  return head + `<h2 class="sec">Five approaches</h2>
+  return head + `<div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+      <h2 class="sec" style="flex:1;min-width:180px">${
+        isFollow ? 'The nudge' : 'Five approaches'}</h2>
+      <button class="linkbtn" data-stop="${esc(r.contact_id)}" data-stopnow="${r.follow_up_stopped_at?'0':'1'}">
+        ${r.follow_up_stopped_at ? 'Resume follow-ups' : 'Stop following up'}</button>
+    </div>
     ${drafts.map(optHtml).join('')}
     ${S.err?`<p class="hint err">${esc(S.err)}</p>`:''}`;
 }
