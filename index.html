@@ -385,7 +385,7 @@ const PAGES = [
 const S = {
   page:'today', board:[], drafts:{}, activeId:null, open:{},
   busy:false, err:'', gen:'', metrics:null, week:null, tiles:null,
-  tasks:null, dayStatus:null, loaded:{},
+  tasks:null, dayStatus:null, seq:null, loaded:{},
   /* leads */
   batches:null, leads:null, verticals:[], batchId:'all', leadFilter:'all',
   picked:new Set(), leadOpen:{}, leadNote:'', leadErr:'', leadProg:null,
@@ -504,6 +504,13 @@ async function loadMetrics(){
   S.loaded.metrics = true;
 }
 
+async function loadSequences(){
+  const { data } = await sb.from('v_sequences_live').select('*')
+    .is('halted_because', null).order('next_due_on').limit(40);
+  S.seq = data || [];
+  S.loaded.seq = true;
+}
+
 async function loadTasks(){
   const [t, st] = await Promise.all([
     sb.from('tasks').select('*').eq('work_date', today())
@@ -579,6 +586,7 @@ async function ensure(page){
     if(!S.loaded.tiles) await loadTiles();
     if(!S.loaded.week) await loadWeek();
     if(!S.loaded.tasks) await loadTasks();
+    if(!S.loaded.seq) await loadSequences();
   }
   if(page==='calendar' && !S.loaded.week) await loadWeek();
   if(page==='kpis'){
@@ -683,6 +691,10 @@ function pageToday(){
         : `<p class="hint">Nothing on the calendar today.</p>`}
     </div>
     <div class="block">
+      <h2 class="sec">Follow-ups coming</h2>
+      ${seqPanel()}
+    </div>
+    <div class="block">
       <h2 class="sec">My day</h2>
       ${ds ? `
         <div class="panelbox">
@@ -717,6 +729,38 @@ function pageToday(){
 }
 
 function loading(){ return `<div class="empty"><h2>Loading</h2></div>`; }
+
+/* Nothing else shows a sequence between the send and the nudge, so a
+   working sequence and a broken one looked identical for four days. */
+function seqPanel(){
+  const rows = S.seq || [];
+  if(!rows.length){
+    return `<p class="hint">No sequences running. One starts every time an email sends.</p>`;
+  }
+  const due = rows.filter(r => Number(r.days_until) <= 0).length;
+  const shown = rows.slice(0, 8);
+  return `<div class="panelbox" style="margin-top:0">
+      <div style="display:flex;align-items:baseline;gap:10px">
+        <span style="font-family:var(--display);font-size:26px;font-weight:700">${num(rows.length)}</span>
+        <span class="eyebrow">waiting on a reply</span>
+      </div>
+      ${due?`<p class="mono" style="color:var(--orange)">${due} due now</p>`:''}
+    </div>
+    <div style="border:1px solid var(--rule)">
+      ${shown.map(r=>{
+        const d = Number(r.days_until);
+        const when = d < 0 ? `${Math.abs(d)}d overdue` : d === 0 ? 'today'
+                   : d === 1 ? 'tomorrow' : `in ${d}d`;
+        return `<div class="ev">
+          <span class="t" style="color:${d<=0?'var(--orange)':'var(--slate)'}">${esc(when)}</span>
+          <span class="s">${esc(r.full_name||'')}
+            ${r.company_name?`<em>${esc(r.company_name)}</em>`:''}</span>
+          <span class="kind">Touch ${esc(r.next_touch)}</span>
+        </div>`;
+      }).join('')}
+    </div>
+    ${rows.length>8?`<p class="hint">${rows.length-8} more.</p>`:''}`;
+}
 
 function rowHtml(r,i){
   return `<button class="row ${r.queue_id===S.activeId?'active':''} ${r.handled?'done':''}" data-row="${r.queue_id}">
