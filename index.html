@@ -401,6 +401,7 @@ const S = {
   /* classifications */
   leadView:'leads', cls:null, clsFilter:'not_fit', clsPicked:new Set(),
   clsBusy:false, clsNote:'', clsErr:'',
+  clsSearch:'', clsSort:'contacts', clsDir:'desc', clsSearching:false,
   /* kpis */
   kpi:null, kpiEdit:false, kpiBusy:false, kpiErr:'', kpiNote:'',
   /* board */
@@ -574,10 +575,21 @@ async function loadClassifications(){
   // least confident. A twenty-contact firm rejected at 60% is the
   // expensive mistake. A one-person venture fund at 95% is not.
   try{
-    const { data, error } = await sb.from('v_classify_pending').select('*')
+    // With five thousand companies the list is a window, so the search
+    // has to hit the database rather than filter the window. Otherwise
+    // it reports nothing for a company that is plainly there, which is
+    // worse than having no search at all.
+    const q = String(S.clsSearch || '').trim();
+    let sel = sb.from('v_classify_pending').select('*');
+    if(q.length >= 2){
+      const like = '%' + q.replace(/[%,()]/g, ' ') + '%';
+      sel = sel.or('company_name.ilike.' + like + ',domain.ilike.' + like
+                 + ',reason.ilike.' + like);
+    }
+    const { data, error } = await sel
       .order('contacts', {ascending:false})
       .order('confidence', {ascending:true})
-      .limit(1500);
+      .limit(600);
     if(error) throw error;
     S.cls = data || [];
   }catch(err){
@@ -1431,6 +1443,7 @@ async function createDeal(){
 }
 
 let orgTimer = null;
+let clsTimer = null;
 function searchOrgs(q){
   clearTimeout(orgTimer);
   if(String(q||'').trim().length < 3){ S.orgHits=[]; S.orgBusy=false; return; }
@@ -1714,17 +1727,6 @@ function clsVisible(){
 
   if(S.clsFilter !== 'all') rows = rows.filter(x => x.outcome === S.clsFilter);
 
-  const q = String(S.clsSearch || '').trim().toLowerCase();
-  if(q){
-    // Reason and titles are searchable too, so "venture" finds every
-    // fund and "facilities" finds the verdicts worth arguing with.
-    rows = rows.filter(x =>
-      String(x.company_name||'').toLowerCase().includes(q) ||
-      String(x.domain||'').toLowerCase().includes(q) ||
-      String(x.reason||'').toLowerCase().includes(q) ||
-      String(x.titles||'').toLowerCase().includes(q));
-  }
-
   const dir = S.clsDir === 'asc' ? 1 : -1;
   const key = S.clsSort;
   rows = rows.slice().sort((a,b)=>{
@@ -1922,7 +1924,18 @@ function wireClassify(){
   // Typing repaints the rows rather than the page, so the cursor and
   // the selection stay where they were.
   const cs = document.getElementById('clsSearch');
-  if(cs) cs.addEventListener('input',()=>{ S.clsSearch = cs.value; clsRepaint(); });
+  if(cs) cs.addEventListener('input',()=>{
+    S.clsSearch = cs.value;
+    clearTimeout(clsTimer);
+    clsTimer = setTimeout(async ()=>{
+      await loadClassifications();
+      render();
+      // Rendering rebuilt the input, so the cursor goes back to where
+      // it was rather than to the start of the box.
+      const el = document.getElementById('clsSearch');
+      if(el){ el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+    }, 400);
+  });
 
   document.querySelectorAll('[data-csort]').forEach(el=>
     el.addEventListener('click',()=>{
