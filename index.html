@@ -1816,9 +1816,10 @@ function pageClassify(){
         <th>Why</th></tr></thead>
       <tbody id="clsBody">${rows}</tbody></table>
     <div id="clsEmpty" class="empty" style="padding:40px 0;${vis.length?'display:none':''}">
-      <h2>${S.clsSearch?'Nothing matches':'Nothing to review'}</h2>
-      <p>${S.clsSearch?'No company matches that search in this filter.'
-                      :'Run the Company Classifier in n8n to populate this.'}</p>
+      <h2 id="clsEmptyH">${S.clsSearch?'Nothing matches':'Nothing to review'}</h2>
+      <p id="clsEmptyP">${S.clsSearch
+        ? 'No company matches that search in this filter. Try a shorter word, or switch the filter to All.'
+        : 'Run the Company Classifier in n8n to populate this.'}</p>
     </div>
 
     ${vis.length?`<div class="actionbar">
@@ -1872,6 +1873,15 @@ function clsRepaint(){
   if(body) body.innerHTML = vis.map(clsRow).join('');
   if(table) table.style.display = vis.length ? '' : 'none';
   if(empty) empty.style.display = vis.length ? 'none' : '';
+
+  // The message has to change with the reason, or a search that found
+  // nothing reads as a database that is empty.
+  const eh = document.getElementById('clsEmptyH');
+  const ep = document.getElementById('clsEmptyP');
+  if(eh) eh.textContent = S.clsSearch ? 'Nothing matches' : 'Nothing to review';
+  if(ep) ep.textContent = S.clsSearch
+    ? 'No company matches that search in this filter. Try a shorter word, or switch the filter to All.'
+    : 'Run the Company Classifier in n8n to populate this.';
 
   const picked = vis.filter(x => S.clsPicked.has(x.company_id)).length;
   const c = document.querySelector('.actionbar .count b');
