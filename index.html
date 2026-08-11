@@ -283,6 +283,12 @@
               padding-top:16px;cursor:pointer}
   .lead .pick input{width:16px;height:16px;accent-color:var(--orange);cursor:pointer;margin:0}
   tr.picked td{background:var(--orange-tint)}
+  .sorth{font:inherit;background:none;border:0;padding:0;cursor:pointer;
+         color:var(--slate);text-transform:inherit;letter-spacing:inherit}
+  .sorth:hover{color:var(--ink)}
+  .sorth.on{color:var(--ink)}
+  th .sorth{font-family:var(--display);text-transform:uppercase;
+            letter-spacing:.07em;font-size:11.5px;font-weight:600}
   .lead .lbody{padding:13px 15px 12px 0;min-width:0}
   .lhead{display:flex;align-items:flex-start;gap:10px}
   .lhead h3{font-family:var(--display);font-size:20px;font-weight:700;margin:0;line-height:1.15}
@@ -571,7 +577,7 @@ async function loadClassifications(){
     const { data, error } = await sb.from('v_classify_pending').select('*')
       .order('contacts', {ascending:false})
       .order('confidence', {ascending:true})
-      .limit(400);
+      .limit(1500);
     if(error) throw error;
     S.cls = data || [];
   }catch(err){
@@ -1704,9 +1710,64 @@ function pageLeads(){
 }
 
 function clsVisible(){
-  const all = S.cls || [];
-  if(S.clsFilter === 'all') return all;
-  return all.filter(x => x.outcome === S.clsFilter);
+  let rows = S.cls || [];
+
+  if(S.clsFilter !== 'all') rows = rows.filter(x => x.outcome === S.clsFilter);
+
+  const q = String(S.clsSearch || '').trim().toLowerCase();
+  if(q){
+    // Reason and titles are searchable too, so "venture" finds every
+    // fund and "facilities" finds the verdicts worth arguing with.
+    rows = rows.filter(x =>
+      String(x.company_name||'').toLowerCase().includes(q) ||
+      String(x.domain||'').toLowerCase().includes(q) ||
+      String(x.reason||'').toLowerCase().includes(q) ||
+      String(x.titles||'').toLowerCase().includes(q));
+  }
+
+  const dir = S.clsDir === 'asc' ? 1 : -1;
+  const key = S.clsSort;
+  rows = rows.slice().sort((a,b)=>{
+    if(key === 'company_name'){
+      return String(a.company_name||'').localeCompare(String(b.company_name||'')) * dir;
+    }
+    const av = Number(a[key]||0), bv = Number(b[key]||0);
+    // Contacts descending breaks ties, since that is what the whole
+    // ordering is for: read the expensive ones first.
+    if(av === bv) return Number(b.contacts||0) - Number(a.contacts||0);
+    return (av - bv) * dir;
+  });
+
+  return rows;
+}
+
+function clsRow(x){
+  const on = S.clsPicked.has(x.company_id);
+  const many = Number(x.contacts) >= 5;
+  const low = Number(x.confidence) < 70;
+  return `<tr class="${on?'picked':''}">
+    <td style="width:28px"><input type="checkbox" data-cpick="${esc(x.company_id)}"
+      ${on?'checked':''} ${x.outcome==='unsure'?'disabled':''} style="accent-color:var(--orange)"></td>
+    <td>
+      <b>${esc(x.company_name||'Unknown')}</b>
+      ${x.domain?`<div class="mono muted">${esc(x.domain)}</div>`:''}
+      ${x.titles?`<div class="hint" style="margin:3px 0 0">${esc(String(x.titles).slice(0,140))}</div>`:''}
+    </td>
+    <td class="num ${many?'':'muted'}" style="${many?'font-weight:600':''}">${num(x.contacts)}</td>
+    <td>
+      ${x.outcome==='not_fit'?`<span class="chip bad">Not a fit</span>`
+       : x.outcome==='unsure'?`<span class="chip">Unsure</span>`
+       : `<span class="chip hot">${esc(x.vertical_slug||'')}</span>`}
+    </td>
+    <td class="num" style="color:${low?'var(--red)':'var(--slate)'}">${esc(x.confidence)}</td>
+    <td class="hint" style="max-width:280px">${esc(x.reason||'')}</td>
+  </tr>`;
+}
+
+function sortHead(key, label, cls){
+  const on = S.clsSort === key;
+  const arrow = on ? (S.clsDir === 'asc' ? ' &uarr;' : ' &darr;') : '';
+  return `<th class="${cls||''}"><button class="sorth ${on?'on':''}" data-csort="${key}">${label}${arrow}</button></th>`;
 }
 
 function pageClassify(){
@@ -1724,28 +1785,7 @@ function pageClassify(){
     `<button class="filt ${S.clsFilter===k?'on':''}" data-cfilter="${k}">${label}<b>${counts(k)}</b></button>`
   ).join('');
 
-  const rows = vis.map(x => {
-    const on = S.clsPicked.has(x.company_id);
-    const many = Number(x.contacts) >= 5;
-    const low = Number(x.confidence) < 70;
-    return `<tr class="${on?'picked':''}">
-      <td style="width:28px"><input type="checkbox" data-cpick="${esc(x.company_id)}"
-        ${on?'checked':''} ${x.outcome==='unsure'?'disabled':''} style="accent-color:var(--orange)"></td>
-      <td>
-        <b>${esc(x.company_name||'Unknown')}</b>
-        ${x.domain?`<div class="mono muted">${esc(x.domain)}</div>`:''}
-        ${x.titles?`<div class="hint" style="margin:3px 0 0">${esc(String(x.titles).slice(0,140))}</div>`:''}
-      </td>
-      <td class="num ${many?'':'muted'}" style="${many?'font-weight:600':''}">${num(x.contacts)}</td>
-      <td>
-        ${x.outcome==='not_fit'?`<span class="chip bad">Not a fit</span>`
-         : x.outcome==='unsure'?`<span class="chip">Unsure</span>`
-         : `<span class="chip hot">${esc(x.vertical_slug||'')}</span>`}
-      </td>
-      <td class="num" style="color:${low?'var(--red)':'var(--slate)'}">${esc(x.confidence)}</td>
-      <td class="hint" style="max-width:280px">${esc(x.reason||'')}</td>
-    </tr>`;
-  }).join('');
+  const rows = vis.map(clsRow).join('');
 
   return `<main class="page wide" style="padding-bottom:0">
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px">
@@ -1753,7 +1793,10 @@ function pageClassify(){
         <button data-lview="leads">Review</button>
         <button data-lview="cls" class="on">Classifications</button>
       </div>
-      <div class="filters" style="flex:1">${filters}</div>
+      <div class="filters">${filters}</div>
+      <input type="text" id="clsSearch" value="${esc(S.clsSearch)}"
+        placeholder="Search company, domain, reason or title"
+        style="flex:1;min-width:220px;width:auto" />
       <button class="linkbtn" id="clsRefresh">Refresh</button>
     </div>
 
@@ -1764,12 +1807,19 @@ function pageClassify(){
     then least confident. A firm with twenty people rejected on 60% is the one worth reading.
     Unsure cannot be applied, since that is the classifier saying it could not tell.</p>
 
-    ${vis.length ? `<table>
-      <thead><tr><th></th><th>Company</th><th class="num">Contacts</th>
-        <th>Verdict</th><th class="num">Conf</th><th>Why</th></tr></thead>
-      <tbody>${rows}</tbody></table>`
-    : `<div class="empty" style="padding:40px 0"><h2>Nothing to review</h2>
-        <p>Run the Company Classifier in n8n to populate this.</p></div>`}
+    <table id="clsTable" style="${vis.length?'':'display:none'}">
+      <thead><tr><th></th>
+        ${sortHead('company_name','Company')}
+        ${sortHead('contacts','Contacts','num')}
+        <th>Verdict</th>
+        ${sortHead('confidence','Conf','num')}
+        <th>Why</th></tr></thead>
+      <tbody id="clsBody">${rows}</tbody></table>
+    <div id="clsEmpty" class="empty" style="padding:40px 0;${vis.length?'display:none':''}">
+      <h2>${S.clsSearch?'Nothing matches':'Nothing to review'}</h2>
+      <p>${S.clsSearch?'No company matches that search in this filter.'
+                      :'Run the Company Classifier in n8n to populate this.'}</p>
+    </div>
 
     ${vis.length?`<div class="actionbar">
       <span class="count"><b>${picked}</b> of ${vis.length} chosen${
@@ -1814,15 +1864,66 @@ async function applyClassifications(dismiss){
   finally{ S.clsBusy = false; render(); }
 }
 
+function clsRepaint(){
+  const vis = clsVisible();
+  const body = document.getElementById('clsBody');
+  const table = document.getElementById('clsTable');
+  const empty = document.getElementById('clsEmpty');
+  if(body) body.innerHTML = vis.map(clsRow).join('');
+  if(table) table.style.display = vis.length ? '' : 'none';
+  if(empty) empty.style.display = vis.length ? 'none' : '';
+
+  const picked = vis.filter(x => S.clsPicked.has(x.company_id)).length;
+  const c = document.querySelector('.actionbar .count b');
+  if(c) c.textContent = String(picked);
+  ['clsApply','clsDismiss'].forEach(id=>{
+    const b = document.getElementById(id);
+    if(b) b.disabled = !picked;
+  });
+  // Checkboxes were just rebuilt, so their handlers went with them.
+  document.querySelectorAll('[data-cpick]').forEach(el=>
+    el.addEventListener('change', onClsPick));
+}
+
+function onClsPick(e){
+  const el = e.target;
+  const id = el.dataset.cpick;
+  if(el.checked) S.clsPicked.add(id); else S.clsPicked.delete(id);
+  const row = el.closest('tr');
+  if(row) row.classList.toggle('picked', el.checked);
+  const vis = clsVisible();
+  const picked = vis.filter(x => S.clsPicked.has(x.company_id)).length;
+  const c = document.querySelector('.actionbar .count b');
+  if(c) c.textContent = String(picked);
+  ['clsApply','clsDismiss'].forEach(bid=>{
+    const b = document.getElementById(bid);
+    if(b) b.disabled = !picked;
+  });
+}
+
 function wireClassify(){
   document.querySelectorAll('[data-lview]').forEach(el=>
     el.addEventListener('click',()=>{ S.leadView = el.dataset.lview; S.clsNote=''; S.clsErr=''; render(); }));
   document.querySelectorAll('[data-cfilter]').forEach(el=>
     el.addEventListener('click',()=>{ S.clsFilter = el.dataset.cfilter; render(); }));
   document.querySelectorAll('[data-cpick]').forEach(el=>
-    el.addEventListener('change',()=>{
-      const id = el.dataset.cpick;
-      if(el.checked) S.clsPicked.add(id); else S.clsPicked.delete(id);
+    el.addEventListener('change', onClsPick));
+
+  // Typing repaints the rows rather than the page, so the cursor and
+  // the selection stay where they were.
+  const cs = document.getElementById('clsSearch');
+  if(cs) cs.addEventListener('input',()=>{ S.clsSearch = cs.value; clsRepaint(); });
+
+  document.querySelectorAll('[data-csort]').forEach(el=>
+    el.addEventListener('click',()=>{
+      const k = el.dataset.csort;
+      if(S.clsSort === k){
+        S.clsDir = S.clsDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        S.clsSort = k;
+        // Names read best A to Z, numbers best highest first.
+        S.clsDir = k === 'company_name' ? 'asc' : 'desc';
+      }
       render();
     }));
   const ca = document.getElementById('clsAll');
