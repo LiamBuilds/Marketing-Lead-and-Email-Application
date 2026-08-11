@@ -567,12 +567,19 @@ async function loadClassifications(){
   // Ordered by what it costs to be wrong: most contacts first, then
   // least confident. A twenty-contact firm rejected at 60% is the
   // expensive mistake. A one-person venture fund at 95% is not.
-  const { data, error } = await sb.from('v_classify_pending').select('*')
-    .order('contacts', {ascending:false})
-    .order('confidence', {ascending:true})
-    .limit(400);
-  if(error) throw error;
-  S.cls = data || [];
+  try{
+    const { data, error } = await sb.from('v_classify_pending').select('*')
+      .order('contacts', {ascending:false})
+      .order('confidence', {ascending:true})
+      .limit(400);
+    if(error) throw error;
+    S.cls = data || [];
+  }catch(err){
+    // Patch 26 may not be applied yet, and the lead board must not
+    // stop rendering because a secondary view is missing.
+    S.cls = [];
+    S.clsErr = 'Classifications are unavailable. ' + (err.message || err);
+  }
   S.clsPicked = new Set();
   S.loaded.cls = true;
 }
@@ -639,7 +646,8 @@ function wireChrome(){
     el.addEventListener('click', async ()=>{
       S.page = el.dataset.page; S.err=''; S.gen='';
       render();
-      await ensure(S.page);
+      try{ await ensure(S.page); }
+      catch(err){ S.err = 'Could not load this tab. ' + (err.message || err); }
       render();
     }));
   const b = document.getElementById('signout');
@@ -1677,11 +1685,10 @@ function pageLeads(){
 
     <main class="page wide" style="padding-bottom:0">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px">
-        <div class="kswitch">
+        ${(S.cls && S.cls.length) ? `<div class="kswitch">
           <button data-lview="leads" class="on">Review</button>
-          <button data-lview="cls">Classifications${
-            (S.cls&&S.cls.length)?` <span style="opacity:.7">${S.cls.length}</span>`:''}</button>
-        </div>
+          <button data-lview="cls">Classifications <span style="opacity:.7">${S.cls.length}</span></button>
+        </div>` : ''}
         <div class="filters" style="flex:1">${filters}</div>
         <button class="linkbtn" id="leadRefresh">Refresh</button>
       </div>
@@ -1795,7 +1802,11 @@ async function applyClassifications(dismiss){
       const { data, error } = await sb.rpc('apply_classifications', { p_ids: ids });
       if(error) throw error;
       const r = Array.isArray(data) ? data[0] : data;
-      S.clsNote = `${r.companies_applied} companies applied, ${r.contacts_changed} contacts changed.`;
+      // Skipped contacts are the ones whose email says they work
+      // somewhere else. Worth naming rather than burying, since that
+      // is the number that says how messy the company records are.
+      S.clsNote = `${r.companies_applied} companies applied, ${r.contacts_changed} contacts changed.`
+        + (r.contacts_skipped ? ` ${r.contacts_skipped} left alone, on a different email domain from their company.` : '');
     }
     S.loaded.cls = false; S.loaded.leads = false;
     await loadClassifications(); await loadBatches(); await loadLeadRows();
