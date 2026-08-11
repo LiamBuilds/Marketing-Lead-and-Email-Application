@@ -581,6 +581,7 @@ async function loadClassifications(){
     // worse than having no search at all.
     const q = String(S.clsSearch || '').trim();
     let sel = sb.from('v_classify_pending').select('*');
+    if(S.clsFilter && S.clsFilter !== 'all') sel = sel.eq('outcome', S.clsFilter);
     if(q.length >= 2){
       const like = '%' + q.replace(/[%,()]/g, ' ') + '%';
       sel = sel.or('company_name.ilike.' + like + ',domain.ilike.' + like
@@ -1779,12 +1780,15 @@ function pageClassify(){
   const pickedContacts = vis.filter(x => S.clsPicked.has(x.company_id))
     .reduce((a,x) => a + Number(x.contacts||0), 0);
 
-  const counts = k => k === 'all' ? all.length : all.filter(x => x.outcome === k).length;
+  // The list is a window over five thousand rows, so a count here
+  // would describe the window rather than the work. Only the active
+  // filter gets a number, and it is the number loaded.
   const filters = [
     ['not_fit','Not a fit'], ['vertical','Reclassify'],
     ['unsure','Unsure'], ['all','All']
   ].map(([k,label]) =>
-    `<button class="filt ${S.clsFilter===k?'on':''}" data-cfilter="${k}">${label}<b>${counts(k)}</b></button>`
+    `<button class="filt ${S.clsFilter===k?'on':''}" data-cfilter="${k}">${label}${
+      S.clsFilter===k?`<b>${all.length}</b>`:''}</button>`
   ).join('');
 
   const rows = vis.map(clsRow).join('');
@@ -1829,6 +1833,8 @@ function pageClassify(){
         pickedContacts?` &middot; ${num(pickedContacts)} contacts`:''}</span>
       <div class="grp">
         <button class="btn small ghost" id="clsNone">Clear</button>
+        <button class="btn small ghost" id="clsSafe"
+          title="Two contacts or fewer, 90% confidence or better">Select low risk</button>
         <button class="btn small ghost" id="clsAll">Select all</button>
         <button class="btn small ghost" id="clsDismiss" ${picked?'':'disabled'}>Dismiss</button>
         <button class="btn small accent" id="clsApply" ${picked?'':'disabled'}>Apply ${picked||''}</button>
@@ -1917,7 +1923,12 @@ function wireClassify(){
   document.querySelectorAll('[data-lview]').forEach(el=>
     el.addEventListener('click',()=>{ S.leadView = el.dataset.lview; S.clsNote=''; S.clsErr=''; render(); }));
   document.querySelectorAll('[data-cfilter]').forEach(el=>
-    el.addEventListener('click',()=>{ S.clsFilter = el.dataset.cfilter; render(); }));
+    el.addEventListener('click', async ()=>{
+      S.clsFilter = el.dataset.cfilter;
+      S.clsPicked = new Set();
+      await loadClassifications();
+      render();
+    }));
   document.querySelectorAll('[data-cpick]').forEach(el=>
     el.addEventListener('change', onClsPick));
 
@@ -1949,6 +1960,19 @@ function wireClassify(){
       }
       render();
     }));
+  // The tail of the list: few contacts and high confidence. Being
+  // wrong about one of these costs one contact, which is the whole
+  // reason the list is ordered the way it is.
+  const csafe = document.getElementById('clsSafe');
+  if(csafe) csafe.addEventListener('click',()=>{
+    clsVisible().forEach(x=>{
+      if(x.outcome !== 'unsure' && Number(x.contacts) <= 2 && Number(x.confidence) >= 90){
+        S.clsPicked.add(x.company_id);
+      }
+    });
+    render();
+  });
+
   const ca = document.getElementById('clsAll');
   if(ca) ca.addEventListener('click',()=>{
     clsVisible().filter(x=>x.outcome!=='unsure').forEach(x=>S.clsPicked.add(x.company_id)); render(); });
