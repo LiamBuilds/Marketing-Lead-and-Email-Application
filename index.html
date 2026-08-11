@@ -282,6 +282,7 @@
   .lead .pick{display:flex;align-items:flex-start;justify-content:center;
               padding-top:16px;cursor:pointer}
   .lead .pick input{width:16px;height:16px;accent-color:var(--orange);cursor:pointer;margin:0}
+  tr.picked td{background:var(--orange-tint)}
   .lead .lbody{padding:13px 15px 12px 0;min-width:0}
   .lhead{display:flex;align-items:flex-start;gap:10px}
   .lhead h3{font-family:var(--display);font-size:20px;font-weight:700;margin:0;line-height:1.15}
@@ -391,6 +392,9 @@ const S = {
   picked:new Set(), leadOpen:{}, leadNote:'', leadErr:'', leadProg:null,
   impOpen:false, impBusy:false, impRows:null, impFile:'', impName:'',
   impVert:'', impErr:'',
+  /* classifications */
+  leadView:'leads', cls:null, clsFilter:'not_fit', clsPicked:new Set(),
+  clsBusy:false, clsNote:'', clsErr:'',
   /* kpis */
   kpi:null, kpiEdit:false, kpiBusy:false, kpiErr:'', kpiNote:'',
   /* board */
@@ -559,6 +563,20 @@ async function loadVerticals(){
   S.loaded.verticals = true;
 }
 
+async function loadClassifications(){
+  // Ordered by what it costs to be wrong: most contacts first, then
+  // least confident. A twenty-contact firm rejected at 60% is the
+  // expensive mistake. A one-person venture fund at 95% is not.
+  const { data, error } = await sb.from('v_classify_pending').select('*')
+    .order('contacts', {ascending:false})
+    .order('confidence', {ascending:true})
+    .limit(400);
+  if(error) throw error;
+  S.cls = data || [];
+  S.clsPicked = new Set();
+  S.loaded.cls = true;
+}
+
 async function loadBatches(){
   const { data, error } = await sb.from('v_batch_summary').select('*')
     .order('created_at',{ascending:false}).limit(60);
@@ -597,6 +615,7 @@ async function ensure(page){
   if(page==='leads'){
     if(!S.loaded.verticals) await loadVerticals();
     if(!S.loaded.leads){ await loadBatches(); await loadLeadRows(); }
+    if(!S.loaded.cls) await loadClassifications();
   }
 }
 
@@ -1616,6 +1635,7 @@ function visibleLeads(){
 
 function pageLeads(){
   if(!S.loaded.leads) return loading();
+  if(S.leadView === 'cls') return pageClassify();
 
   const all = S.leads || [];
   const vis = visibleLeads();
@@ -1657,6 +1677,11 @@ function pageLeads(){
 
     <main class="page wide" style="padding-bottom:0">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+        <div class="kswitch">
+          <button data-lview="leads" class="on">Review</button>
+          <button data-lview="cls">Classifications${
+            (S.cls&&S.cls.length)?` <span style="opacity:.7">${S.cls.length}</span>`:''}</button>
+        </div>
         <div class="filters" style="flex:1">${filters}</div>
         <button class="linkbtn" id="leadRefresh">Refresh</button>
       </div>
@@ -1669,6 +1694,140 @@ function pageLeads(){
       ${all.length?actionBar(kept, vis.length):''}
     </main>
   </div>${S.impOpen?importSheet():''}`;
+}
+
+function clsVisible(){
+  const all = S.cls || [];
+  if(S.clsFilter === 'all') return all;
+  return all.filter(x => x.outcome === S.clsFilter);
+}
+
+function pageClassify(){
+  const all = S.cls || [];
+  const vis = clsVisible();
+  const picked = vis.filter(x => S.clsPicked.has(x.company_id)).length;
+  const pickedContacts = vis.filter(x => S.clsPicked.has(x.company_id))
+    .reduce((a,x) => a + Number(x.contacts||0), 0);
+
+  const counts = k => k === 'all' ? all.length : all.filter(x => x.outcome === k).length;
+  const filters = [
+    ['not_fit','Not a fit'], ['vertical','Reclassify'],
+    ['unsure','Unsure'], ['all','All']
+  ].map(([k,label]) =>
+    `<button class="filt ${S.clsFilter===k?'on':''}" data-cfilter="${k}">${label}<b>${counts(k)}</b></button>`
+  ).join('');
+
+  const rows = vis.map(x => {
+    const on = S.clsPicked.has(x.company_id);
+    const many = Number(x.contacts) >= 5;
+    const low = Number(x.confidence) < 70;
+    return `<tr class="${on?'picked':''}">
+      <td style="width:28px"><input type="checkbox" data-cpick="${esc(x.company_id)}"
+        ${on?'checked':''} ${x.outcome==='unsure'?'disabled':''} style="accent-color:var(--orange)"></td>
+      <td>
+        <b>${esc(x.company_name||'Unknown')}</b>
+        ${x.domain?`<div class="mono muted">${esc(x.domain)}</div>`:''}
+        ${x.titles?`<div class="hint" style="margin:3px 0 0">${esc(String(x.titles).slice(0,140))}</div>`:''}
+      </td>
+      <td class="num ${many?'':'muted'}" style="${many?'font-weight:600':''}">${num(x.contacts)}</td>
+      <td>
+        ${x.outcome==='not_fit'?`<span class="chip bad">Not a fit</span>`
+         : x.outcome==='unsure'?`<span class="chip">Unsure</span>`
+         : `<span class="chip hot">${esc(x.vertical_slug||'')}</span>`}
+      </td>
+      <td class="num" style="color:${low?'var(--red)':'var(--slate)'}">${esc(x.confidence)}</td>
+      <td class="hint" style="max-width:280px">${esc(x.reason||'')}</td>
+    </tr>`;
+  }).join('');
+
+  return `<main class="page wide" style="padding-bottom:0">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+      <div class="kswitch">
+        <button data-lview="leads">Review</button>
+        <button data-lview="cls" class="on">Classifications</button>
+      </div>
+      <div class="filters" style="flex:1">${filters}</div>
+      <button class="linkbtn" id="clsRefresh">Refresh</button>
+    </div>
+
+    ${S.clsNote?`<div class="done-banner" style="margin-bottom:14px"><p style="margin:0">${esc(S.clsNote)}</p></div>`:''}
+    ${S.clsErr?`<p class="hint err" style="margin-bottom:14px">${esc(S.clsErr)}</p>`:''}
+
+    <p class="hint" style="margin-top:0">Ordered by what it costs to be wrong: most contacts first,
+    then least confident. A firm with twenty people rejected on 60% is the one worth reading.
+    Unsure cannot be applied, since that is the classifier saying it could not tell.</p>
+
+    ${vis.length ? `<table>
+      <thead><tr><th></th><th>Company</th><th class="num">Contacts</th>
+        <th>Verdict</th><th class="num">Conf</th><th>Why</th></tr></thead>
+      <tbody>${rows}</tbody></table>`
+    : `<div class="empty" style="padding:40px 0"><h2>Nothing to review</h2>
+        <p>Run the Company Classifier in n8n to populate this.</p></div>`}
+
+    ${vis.length?`<div class="actionbar">
+      <span class="count"><b>${picked}</b> of ${vis.length} chosen${
+        pickedContacts?` &middot; ${num(pickedContacts)} contacts`:''}</span>
+      <div class="grp">
+        <button class="btn small ghost" id="clsNone">Clear</button>
+        <button class="btn small ghost" id="clsAll">Select all</button>
+        <button class="btn small ghost" id="clsDismiss" ${picked?'':'disabled'}>Dismiss</button>
+        <button class="btn small accent" id="clsApply" ${picked?'':'disabled'}>Apply ${picked||''}</button>
+      </div>
+    </div>`:''}
+  </main>`;
+}
+
+async function applyClassifications(dismiss){
+  const ids = clsVisible().filter(x => S.clsPicked.has(x.company_id)).map(x => x.company_id);
+  if(!ids.length) return;
+
+  const affected = clsVisible().filter(x => S.clsPicked.has(x.company_id))
+    .reduce((a,x) => a + Number(x.contacts||0), 0);
+  if(!dismiss && !confirm(`Apply ${ids.length} classifications?\n\nThis changes ${affected} contacts. Anything marked not a fit stops receiving outreach.`)) return;
+
+  S.clsBusy = true; S.clsErr = ''; S.clsNote = ''; render();
+  try{
+    if(dismiss){
+      const { data, error } = await sb.rpc('dismiss_classifications', { p_ids: ids });
+      if(error) throw error;
+      S.clsNote = `${data} dismissed. No contacts were changed.`;
+    } else {
+      const { data, error } = await sb.rpc('apply_classifications', { p_ids: ids });
+      if(error) throw error;
+      const r = Array.isArray(data) ? data[0] : data;
+      S.clsNote = `${r.companies_applied} companies applied, ${r.contacts_changed} contacts changed.`;
+    }
+    S.loaded.cls = false; S.loaded.leads = false;
+    await loadClassifications(); await loadBatches(); await loadLeadRows();
+  }catch(err){ S.clsErr = err.message || String(err); }
+  finally{ S.clsBusy = false; render(); }
+}
+
+function wireClassify(){
+  document.querySelectorAll('[data-lview]').forEach(el=>
+    el.addEventListener('click',()=>{ S.leadView = el.dataset.lview; S.clsNote=''; S.clsErr=''; render(); }));
+  document.querySelectorAll('[data-cfilter]').forEach(el=>
+    el.addEventListener('click',()=>{ S.clsFilter = el.dataset.cfilter; render(); }));
+  document.querySelectorAll('[data-cpick]').forEach(el=>
+    el.addEventListener('change',()=>{
+      const id = el.dataset.cpick;
+      if(el.checked) S.clsPicked.add(id); else S.clsPicked.delete(id);
+      render();
+    }));
+  const ca = document.getElementById('clsAll');
+  if(ca) ca.addEventListener('click',()=>{
+    clsVisible().filter(x=>x.outcome!=='unsure').forEach(x=>S.clsPicked.add(x.company_id)); render(); });
+  const cn = document.getElementById('clsNone');
+  if(cn) cn.addEventListener('click',()=>{
+    clsVisible().forEach(x=>S.clsPicked.delete(x.company_id)); render(); });
+  const cap = document.getElementById('clsApply');
+  if(cap) cap.addEventListener('click',()=>applyClassifications(false));
+  const cd = document.getElementById('clsDismiss');
+  if(cd) cd.addEventListener('click',()=>applyClassifications(true));
+  const cr = document.getElementById('clsRefresh');
+  if(cr) cr.addEventListener('click', async ()=>{
+    S.clsNote=''; S.clsErr=''; S.loaded.cls=false; render();
+    await loadClassifications(); render(); });
 }
 
 function batchRow(b){
@@ -1809,6 +1968,7 @@ function importSheet(){
 }
 
 function wireLeads(){
+  wireClassify();
   document.querySelectorAll('[data-batch]').forEach(el=>
     el.addEventListener('click', async ()=>{
       S.batchId = el.dataset.batch; S.leadNote=''; S.leadErr='';
