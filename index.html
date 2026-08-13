@@ -404,7 +404,7 @@ const PAGES = [
 
 const S = {
   page:'today', board:[], drafts:{}, activeId:null, open:{},
-  busy:false, err:'', gen:'', metrics:null, week:null, tiles:null, goldOnly:false,
+  busy:false, err:'', gen:'', metrics:null, week:null, tiles:null, goldOnly:false, goldPool:0,
   tasks:null, dayStatus:null, seq:null, loaded:{},
   /* leads */
   batches:null, leads:null, verticals:[], batchId:'all', leadFilter:'all',
@@ -500,6 +500,17 @@ async function loadBoard(){
 async function loadTiles(){
   const { data } = await sb.from('v_dash_tiles').select('*').order('sort_order');
   S.tiles = data || [];
+
+  /* Gold is not a row in v_dash_tiles, because it crosses every sector.
+     This is an approximate pool: approved, has an address, not a client.
+     The full guard set only runs server side when the button is pressed,
+     so the tile can read a little high. */
+  const { count } = await sb.from('contacts')
+    .select('id', { count: 'exact', head: true })
+    .eq('is_gold', true).eq('status', 'approved')
+    .not('email', 'is', null).eq('is_client', false);
+  S.goldPool = count || 0;
+
   S.loaded.tiles = true;
 }
 
@@ -717,6 +728,8 @@ function wirePage(){
   if(all) all.addEventListener('click', generateAcross);
   const gf = document.getElementById('goldFilt');
   if(gf) gf.addEventListener('click',()=>{ S.goldOnly=!S.goldOnly; render(); });
+  const gg = document.getElementById('genGold');
+  if(gg) gg.addEventListener('click',()=>generate(null, 5, true));
   const add = document.getElementById('addTask');
   if(add) add.addEventListener('click', addTask);
   const ti = document.getElementById('taskTitle');
@@ -996,14 +1009,19 @@ function sectorBar(){
     </div>
     ${(()=>{
       // Gold is a filter, not a sector. Somebody can be an architect in
-      // Healthcare and also on Pat's list, so this narrows the board
-      // rather than dividing it.
-      const g = (S.board||[]).filter(r=>r.is_gold).length;
-      if(!g && !S.goldOnly) return '';
-      return `<div class="sec-tile gold ${S.goldOnly?'on':''}">
+      // Healthcare and also on Pat's list, so a gold pull narrows the pool
+      // rather than dividing it, and the tile sits alongside the sectors.
+      const pool = Number(S.goldPool || 0);
+      const onBoard = (S.board||[]).filter(r=>r.is_gold).length;
+      return `<div class="sec-tile gold ${S.goldOnly?'on':''}"
+        title="Hand-picked by Pat. ${num(pool)} approved with an address${
+          onBoard?`, ${num(onBoard)} on today's board`:''}.">
         <h4>Pat's Gold</h4>
-        <div class="n">${num(g)}<small> on the board</small></div>
-        <button class="btn small ghost" id="goldFilt">${S.goldOnly?'Show all':'Only these'}</button>
+        <div class="n">${num(pool)}<small> ready</small>${
+          onBoard?`<small> &middot; ${num(onBoard)} today</small>`:''}</div>
+        <button class="btn small" id="genGold" ${(!pool||S.busy)?'disabled':''}>Generate 5</button>
+        ${onBoard?`<button class="btn small ghost" id="goldFilt" style="margin-top:4px">${
+          S.goldOnly?'Show all':'Only these'}</button>`:''}
       </div>`;
     })()}
     ${tiles.map(t=>{
@@ -2446,13 +2464,14 @@ async function useDraft(draftId){
   finally{ S.busy=false; render(); }
 }
 
-async function generate(verticalId, count){
+async function generate(verticalId, count, gold){
   if(S.busy) return;
   S.busy=true; S.gen='Pulling contacts and writing drafts, this takes about a minute…'; render();
   try{
+    const body = gold ? {gold:true, count:count} : {vertical_id:verticalId, count:count};
     const res = await fetch(GENERATE_URL,{method:'POST',
       headers:{'content-type':'application/json'},
-      body:JSON.stringify({vertical_id:verticalId, count:count})});
+      body:JSON.stringify(body)});
     const out = await res.json().catch(()=>({}));
     S.gen = out.ok ? `Queued ${out.queued}. Open the Today tab to work through them.`
                    : (out.error || 'Nothing eligible in that sector right now.');
