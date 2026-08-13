@@ -94,6 +94,13 @@
   .row:hover{background:#FBFAF8}
   .row.active{background:var(--orange-tint);border-left-color:var(--orange)}
   .row.done .name{color:var(--slate)}
+  /* Pat's Gold: hand-picked, so it has to read differently at a glance from
+     a scraped lead. Filled cell rather than a left rule, because the left
+     rule already means "this row is open". */
+  .row.gold{background:var(--orange-tint)}
+  .row.gold .name::after{content:'GOLD';font-family:var(--mono);font-size:9px;
+      letter-spacing:.08em;color:var(--orange);margin-left:7px;vertical-align:1px}
+  .row.gold.active{background:#FBE3C9}
   .row-top{display:flex;align-items:baseline;gap:8px}
   .idx{font-family:var(--mono);font-size:11px;color:var(--slate);min-width:18px}
   .name{font-weight:600;font-size:14px}
@@ -261,6 +268,10 @@
             border:1px solid var(--rule);border-top:3px solid var(--rule);padding:8px 11px 9px}
   .sec-tile.live{border-top-color:var(--orange)}
   .sec-tile.all{border-top-color:var(--ink)}
+  .sec-tile.gold{border-top-color:var(--orange);background:var(--orange-tint)}
+  .sec-tile.gold.on{background:var(--orange);border-color:var(--orange)}
+  .sec-tile.gold.on h4,.sec-tile.gold.on .n{color:#fff}
+  .sec-tile.gold.on .n small{color:#FBE3C9}
   .sec-tile h4{font-family:var(--display);text-transform:uppercase;letter-spacing:.06em;
                font-size:12.5px;font-weight:700;margin:0;white-space:nowrap}
   .sec-tile .n{font-family:var(--display);font-size:21px;font-weight:700;line-height:1.15}
@@ -279,6 +290,8 @@
         border:1px solid var(--rule);border-left:3px solid var(--rule);margin-bottom:9px}
   .lead.keep{border-left-color:var(--orange)}
   .lead.flag{border-left-color:var(--red)}
+  .lead.gold{border-left-color:var(--orange);background:var(--orange-tint)}
+  .chip.gold{border-color:var(--orange);background:var(--orange);color:#fff}
   .lead .pick{display:flex;align-items:flex-start;justify-content:center;
               padding-top:16px;cursor:pointer}
   .lead .pick input{width:16px;height:16px;accent-color:var(--orange);cursor:pointer;margin:0}
@@ -391,7 +404,7 @@ const PAGES = [
 
 const S = {
   page:'today', board:[], drafts:{}, activeId:null, open:{},
-  busy:false, err:'', gen:'', metrics:null, week:null, tiles:null,
+  busy:false, err:'', gen:'', metrics:null, week:null, tiles:null, goldOnly:false,
   tasks:null, dayStatus:null, seq:null, loaded:{},
   /* leads */
   batches:null, leads:null, verticals:[], batchId:'all', leadFilter:'all',
@@ -702,6 +715,8 @@ function wirePage(){
     el.addEventListener('click',()=>generate(Number(el.dataset.gen), 5)));
   const all = document.getElementById('genAll');
   if(all) all.addEventListener('click', generateAcross);
+  const gf = document.getElementById('goldFilt');
+  if(gf) gf.addEventListener('click',()=>{ S.goldOnly=!S.goldOnly; render(); });
   const add = document.getElementById('addTask');
   if(add) add.addEventListener('click', addTask);
   const ti = document.getElementById('taskTitle');
@@ -763,10 +778,12 @@ function pageToday(){
   }
 
   const done = S.board.filter(r=>r.handled).length;
+  const shownRows = S.goldOnly ? S.board.filter(r=>r.is_gold) : S.board;
   return sectorBar() + `<div class="split">
     <nav class="board">
-      <div class="board-head"><span class="eyebrow">${done} of ${S.board.length} cleared</span></div>
-      ${S.board.map(rowHtml).join('')}
+      <div class="board-head"><span class="eyebrow">${done} of ${S.board.length} cleared${
+        S.goldOnly?` &middot; showing Pat's Gold only`:''}</span></div>
+      ${shownRows.map(rowHtml).join('')}
     </nav>
     <main class="page cols3">
       <div>${detailHtml()}</div>
@@ -809,7 +826,7 @@ function seqPanel(){
 }
 
 function rowHtml(r,i){
-  return `<button class="row ${r.queue_id===S.activeId?'active':''} ${r.handled?'done':''}" data-row="${r.queue_id}">
+  return `<button class="row ${r.queue_id===S.activeId?'active':''} ${r.handled?'done':''} ${r.is_gold?'gold':''}" data-row="${r.queue_id}">
     <span class="row-top"><span class="idx">${String(i+1).padStart(2,'0')}</span>
     <span class="name">${esc(r.full_name||r.email)}</span>
     ${r.handled?'<span class="tick">&#10003;</span>':''}</span>
@@ -977,6 +994,18 @@ function sectorBar(){
       <div class="n">${num(tiles.reduce((a,t)=>a+Number(t.pool||0),0))}<small> ready</small></div>
       <button class="btn small ghost" id="genAll" ${S.busy?'disabled':''}>Two from each</button>
     </div>
+    ${(()=>{
+      // Gold is a filter, not a sector. Somebody can be an architect in
+      // Healthcare and also on Pat's list, so this narrows the board
+      // rather than dividing it.
+      const g = (S.board||[]).filter(r=>r.is_gold).length;
+      if(!g && !S.goldOnly) return '';
+      return `<div class="sec-tile gold ${S.goldOnly?'on':''}">
+        <h4>Pat's Gold</h4>
+        <div class="n">${num(g)}<small> on the board</small></div>
+        <button class="btn small ghost" id="goldFilt">${S.goldOnly?'Show all':'Only these'}</button>
+      </div>`;
+    })()}
     ${tiles.map(t=>{
       const live = Number(t.pool) > 0;
       return `<div class="sec-tile ${live?'live':''}" title="${num(t.sent_all_time)} sent, ${num(t.replied_all_time)} replied${t.has_proof?'':', no proof points'}">
@@ -1658,6 +1687,7 @@ function visibleLeads(){
   if(S.leadFilter==='email')    return all.filter(l=>l.email);
   if(S.leadFilter==='nosector') return all.filter(l=>!l.vertical);
   if(S.leadFilter==='unconf')   return all.filter(l=>l.apollo_matched===false);
+  if(S.leadFilter==='gold')     return all.filter(l=>l.is_gold);
   return all;
 }
 
@@ -1674,7 +1704,8 @@ function pageLeads(){
     ['all','All', all.length],
     ['email','Has email', all.filter(l=>l.email).length],
     ['unconf','Unconfirmed', all.filter(l=>l.apollo_matched===false).length],
-    ['nosector','No sector', all.filter(l=>!l.vertical).length]
+    ['nosector','No sector', all.filter(l=>!l.vertical).length],
+    ["gold","Pat's Gold", all.filter(l=>l.is_gold).length]
   ].map(([k,label,n])=>`<button class="filt ${S.leadFilter===k?'on':''}" data-lfilter="${k}">${label}<b>${n}</b></button>`).join('');
 
   let body;
@@ -2026,7 +2057,7 @@ function leadHtml(l){
 
   const hasMore = l.company_description || l.bio || l.company_keywords || links.length;
 
-  return `<article class="lead ${on?'keep':''} ${(!l.vertical || l.apollo_matched===false)?'flag':''}">
+  return `<article class="lead ${on?'keep':''} ${l.is_gold?'gold':''} ${(!l.is_gold && (!l.vertical || l.apollo_matched===false))?'flag':''}">
     <label class="pick">
       <input type="checkbox" data-pick="${esc(l.contact_id)}" ${on?'checked':''}
              aria-label="Keep ${esc(l.full_name)}" />
@@ -2041,6 +2072,8 @@ function leadHtml(l){
       </div>
 
       <div class="chips">
+        ${l.is_gold?`<span class="chip gold" title="Hand-picked by Pat from his client tracking list">Pat's Gold</span>`:''}
+        ${l.relationship?`<span class="chip">${esc(l.relationship)}</span>`:''}
         ${l.vertical?`<span class="chip hot">${esc(l.vertical)}</span>`
                     :`<span class="chip bad">No sector</span>`}
         ${l.apollo_matched===false?`<span class="chip bad" title="Apollo has no record of this person. Everything here came from the Evaboot scrape alone.">Unconfirmed</span>`:''}
