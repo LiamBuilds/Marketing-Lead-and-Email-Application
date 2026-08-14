@@ -291,6 +291,38 @@
   .lead.keep{border-left-color:var(--orange)}
   .lead.flag{border-left-color:var(--red)}
   .lead.gold{border-left-color:var(--orange);background:var(--orange-tint)}
+
+  /* Event invites */
+  .kswitch .dot{display:inline-block;min-width:16px;padding:0 4px;margin-left:5px;
+      border-radius:8px;background:var(--orange);color:#fff;
+      font-family:var(--mono);font-size:10px;line-height:16px;text-align:center}
+  .fchips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+  .fchip{border:1px solid var(--line);background:#fff;padding:5px 11px;
+      font-size:12px;cursor:pointer;color:var(--slate)}
+  .fchip b{font-family:var(--mono);margin-left:4px;color:var(--ink)}
+  .fchip.on{border-color:var(--ink);color:var(--ink)}
+  .inv-list{display:flex;flex-direction:column;gap:10px}
+  .inv{border:1px solid var(--line);border-left:3px solid var(--line);
+      background:#fff;padding:14px 16px}
+  .inv.busy{opacity:.55}
+  .inv.going{border-left-color:var(--orange)}
+  .inv.passed{opacity:.55}
+  .inv-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+  .inv-head h4{margin:0;font-size:15px}
+  .inv-org{color:var(--slate);font-size:12px;margin-top:2px}
+  .ebadge{font-family:var(--mono);font-size:10px;letter-spacing:.06em;
+      border:1px solid var(--line);padding:3px 7px;white-space:nowrap;color:var(--slate)}
+  .ebadge.soon{border-color:var(--orange);color:var(--orange)}
+  .ebadge.past{border-color:var(--line);color:var(--slate)}
+  .inv-facts{font-family:var(--mono);font-size:11px;color:var(--slate);margin-top:8px}
+  .inv-sum{margin:8px 0 0;font-size:13px;line-height:1.5}
+  .inv-lvl{margin-top:8px;font-size:12px;color:var(--slate)}
+  .inv-lvl b{color:var(--ink)}
+  .inv-foot{display:flex;justify-content:space-between;align-items:center;
+      gap:10px;margin-top:12px;flex-wrap:wrap}
+  .inv-acts{display:flex;gap:5px;flex-wrap:wrap}
+  .inv-links{display:flex;gap:6px;align-items:center}
+  .inv-box{font-family:var(--mono);font-size:10px;color:var(--slate)}
   .chip.gold{border-color:var(--orange);background:var(--orange);color:#fff}
   .lead .pick{display:flex;align-items:flex-start;justify-content:center;
               padding-top:16px;cursor:pointer}
@@ -419,6 +451,7 @@ const S = {
   kpi:null, kpiEdit:false, kpiBusy:false, kpiErr:'', kpiNote:'',
   /* board */
   kpiView:'scorecard', boardPipe:null, dealId:null, dealBusy:false, dealErr:'',
+  calView:'schedule', invites:null, inviteFilter:'open', inviteBusy:'', inviteErr:'',
   addOpen:false, addForm:{}, orgQuery:'', orgHits:[], orgBusy:false
 };
 
@@ -434,6 +467,13 @@ const fmtTime = iso => new Date(iso).toLocaleTimeString('en-US',
   {hour:'numeric',minute:'2-digit',timeZone:'America/Los_Angeles'});
 const dayKey = iso => new Date(iso).toLocaleDateString('en-US',
   {weekday:'short',month:'short',day:'numeric',timeZone:'America/Los_Angeles'});
+const fmtDay = iso => {
+  if(!iso) return '';
+  const d = new Date(iso);
+  return isNaN(d) ? '' : d.toLocaleDateString('en-US',
+    {weekday:'short',month:'short',day:'numeric',year:'numeric',
+     timeZone:'America/Los_Angeles'});
+};
 const shortDate = iso => {
   if(!iso) return '';
   const d = new Date(iso);
@@ -518,6 +558,31 @@ async function loadWeek(){
   const { data } = await sb.from('v_dash_week').select('*');
   S.week = data || [];
   S.loaded.week = true;
+}
+
+async function loadInvites(){
+  const { data, error } = await sb.from('v_event_invites').select('*');
+  if(error) S.inviteErr = error.message;
+  S.invites = data || [];
+  S.loaded.invites = true;
+}
+
+async function decideInvite(id, decision){
+  if(S.inviteBusy) return;
+  S.inviteBusy = id; S.inviteErr=''; render();
+  let who = null;
+  try{ const { data } = await sb.auth.getUser(); who = data && data.user ? data.user.email : null; }
+  catch(e){ who = null; }
+
+  const { error } = await sb.from('event_invites')
+    .update({ decision: decision,
+              decided_at: new Date().toISOString(),
+              decided_by: who })
+    .eq('id', id);
+  if(error) S.inviteErr = error.message;
+  S.loaded.invites = false;
+  await loadInvites();
+  S.inviteBusy=''; render();
 }
 
 async function loadMetrics(){
@@ -657,6 +722,7 @@ async function ensure(page){
     if(!S.loaded.seq) await loadSequences();
   }
   if(page==='calendar' && !S.loaded.week) await loadWeek();
+  if(page==='calendar' && !S.loaded.invites) await loadInvites();
   if(page==='kpis'){
     if(!S.loaded.kpis) await loadKpis();
     if(!S.loaded.metrics) await loadMetrics();
@@ -1050,11 +1116,23 @@ function recentTable(rows){
 }
 
 /* ================= calendar ================= */
+function calSwitch(){
+  const open = (S.invites||[]).filter(i=>i.decision==='undecided' && !i.is_past).length;
+  return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+    <div class="kswitch">
+      <button data-cview="schedule" class="${S.calView==='schedule'?'on':''}">Schedule</button>
+      <button data-cview="invites" class="${S.calView==='invites'?'on':''}">Invites${
+        open?` <span class="dot">${open}</span>`:''}</button>
+    </div>
+  </div>`;
+}
+
 function pageCalendar(){
+  if(S.calView==='invites') return pageInvites();
   if(!S.loaded.week) return loading();
   const w = S.week || [];
   if(!w.length){
-    return `<main class="page"><div class="empty"><h2>No events</h2>
+    return `<main class="page">${calSwitch()}<div class="empty"><h2>No events</h2>
       <p>Nothing on the calendar for the next two weeks. If that looks wrong, run the calendar sync in n8n.</p>
     </div></main>`;
   }
@@ -1073,6 +1151,7 @@ function pageCalendar(){
   const tk = dayKey(new Date().toISOString());
 
   return `<main class="page">
+    ${calSwitch()}
     <div class="stat-grid">${stats}</div>
     <div class="block"><h2 class="sec">The next two weeks</h2>
       <div>${days.map(d=>`<div class="day">
@@ -1082,6 +1161,109 @@ function pageCalendar(){
         ${d.items.map(evRow).join('')}
       </div>`).join('')}</div>
     </div></main>`;
+}
+
+/* ---------- Event invites ---------------------------------------------- */
+
+function inviteRow(v){
+  const busy = S.inviteBusy === v.id;
+
+  /* Sorted and coloured by deadline, not by event date. An event four months
+     out with an RSVP closing Friday is the one that bites. */
+  let badge = '';
+  const d = v.days_left;
+  if(v.is_past){
+    badge = `<span class="ebadge past">Passed</span>`;
+  }else if(d !== null && d !== undefined){
+    const cls = d < 0 ? 'past' : (d <= 7 ? 'soon' : '');
+    const word = d < 0 ? 'Deadline gone'
+               : d === 0 ? 'Today'
+               : d === 1 ? '1 day left'
+               : `${d} days left`;
+    badge = `<span class="ebadge ${cls}">${word}</span>`;
+  }
+
+  const facts = [];
+  if(v.starts_at)  facts.push(fmtDay(v.starts_at));
+  if(v.location)   facts.push(esc(String(v.location).slice(0,70)));
+  if(v.is_virtual) facts.push('Virtual');
+  if(v.cost_text)  facts.push(esc(String(v.cost_text).slice(0,60)));
+
+  const done = v.decision !== 'undecided';
+
+  return `<article class="inv ${v.decision} ${busy?'busy':''}">
+    <div class="inv-head">
+      <div>
+        <h4>${esc(v.event_name || v.subject || 'Untitled')}</h4>
+        <div class="inv-org">${esc(v.org_name || v.from_name || v.from_email || '')}</div>
+      </div>
+      ${badge}
+    </div>
+
+    ${facts.length?`<div class="inv-facts">${facts.join(' &middot; ')}</div>`:''}
+    ${v.summary?`<p class="inv-sum">${esc(v.summary)}</p>`:''}
+    ${v.sponsorship_levels?`<div class="inv-lvl"><b>Sponsorship</b> ${
+      esc(String(v.sponsorship_levels).slice(0,220))}</div>`:''}
+
+    <div class="inv-foot">
+      <div class="inv-acts">
+        ${['going','passed','maybe'].map(k=>
+          `<button class="btn small ${v.decision===k?'':'ghost'}"
+            data-decide="${v.id}" data-val="${k}" ${busy?'disabled':''}>${
+            k==='going'?'Going':k==='passed'?'Passed':'Maybe'}</button>`).join('')}
+        ${done?`<button class="btn small ghost" data-decide="${v.id}"
+          data-val="undecided" ${busy?'disabled':''}>Clear</button>`:''}
+      </div>
+      <div class="inv-links">
+        ${v.registration_url?`<a class="chip" href="${esc(v.registration_url)}"
+          target="_blank" rel="noopener">Register</a>`:''}
+        ${v.web_link?`<a class="chip" href="${esc(v.web_link)}"
+          target="_blank" rel="noopener">Email</a>`:''}
+        <span class="inv-box" title="Which mailbox it arrived in">${esc(v.mailbox||'')}</span>
+      </div>
+    </div>
+  </article>`;
+}
+
+function pageInvites(){
+  if(!S.loaded.invites) return `<main class="page">${calSwitch()}${loading()}</main>`;
+
+  const all = S.invites || [];
+  const open = all.filter(v=>v.decision==='undecided' && !v.is_past);
+  const sets = {
+    open: open,
+    going: all.filter(v=>v.decision==='going'),
+    all: all.filter(v=>!v.is_past),
+    past: all.filter(v=>v.is_past)
+  };
+  const rows = sets[S.inviteFilter] || open;
+
+  const tabs = [
+    ['open','Waiting on you', sets.open.length],
+    ['going','Going', sets.going.length],
+    ['all','All upcoming', sets.all.length],
+    ['past','Past', sets.past.length]
+  ].map(([k,label,n])=>
+    `<button class="fchip ${S.inviteFilter===k?'on':''}" data-ifilt="${k}">${
+      label} <b>${n}</b></button>`).join('');
+
+  if(!all.length){
+    return `<main class="page">${calSwitch()}
+      <div class="empty"><h2>Nothing yet</h2>
+        <p>The scanner reads Pat's and Liam's inboxes every fifteen minutes and
+           files anything that looks like an event or a sponsorship offer.
+           Nothing has come through so far.</p>
+      </div></main>`;
+  }
+
+  return `<main class="page">
+    ${calSwitch()}
+    <div class="fchips">${tabs}</div>
+    ${S.inviteErr?`<div class="warn">${esc(S.inviteErr)}</div>`:''}
+    ${rows.length
+      ? `<div class="inv-list">${rows.map(inviteRow).join('')}</div>`
+      : `<div class="empty"><h2>Nothing here</h2><p>No invitations in this list.</p></div>`}
+  </main>`;
 }
 
 function evRow(e){
@@ -1559,6 +1741,15 @@ function wireBoard(){
   wireDrag();
   document.querySelectorAll('[data-kview]').forEach(el=>
     el.addEventListener('click',()=>{ S.kpiView = el.dataset.kview; S.kpiNote=''; S.dealErr=''; render(); }));
+
+  document.querySelectorAll('[data-cview]').forEach(el=>
+    el.addEventListener('click',()=>{ S.calView = el.dataset.cview; S.inviteErr=''; render(); }));
+
+  document.querySelectorAll('[data-ifilt]').forEach(el=>
+    el.addEventListener('click',()=>{ S.inviteFilter = el.dataset.ifilt; render(); }));
+
+  document.querySelectorAll('[data-decide]').forEach(el=>
+    el.addEventListener('click',()=>decideInvite(el.dataset.decide, el.dataset.val)));
 
   const bp = document.getElementById('bPipe');
   if(bp) bp.addEventListener('change',()=>{ S.boardPipe = bp.value; render(); });
