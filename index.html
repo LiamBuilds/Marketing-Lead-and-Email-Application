@@ -1974,12 +1974,14 @@ function wireBoard(){
   document.querySelectorAll('[data-decide]').forEach(el=>
     el.addEventListener('click',()=>decideInvite(el.dataset.decide, el.dataset.val)));
 
-  const ao = document.getElementById('addOpen');
-  if(ao) ao.addEventListener('click',()=>{ S.addOpen=!S.addOpen; S.addNote=''; render(); });
-  const ax = document.getElementById('alClose');
-  if(ax) ax.addEventListener('click',()=>{ S.addOpen=false; render(); });
-  const asv = document.getElementById('alSave');
-  if(asv) asv.addEventListener('click', submitManualLead);
+  // Distinct names on purpose: this function is long and already uses
+  // av, ao and ax further down for the deal form.
+  const mlOpen = document.getElementById('addOpen');
+  if(mlOpen) mlOpen.addEventListener('click',()=>{ S.addOpen=!S.addOpen; S.addNote=''; render(); });
+  const mlClose = document.getElementById('alClose');
+  if(mlClose) mlClose.addEventListener('click',()=>{ S.addOpen=false; render(); });
+  const mlSave = document.getElementById('alSave');
+  if(mlSave) mlSave.addEventListener('click', submitManualLead);
 
   // Bound to state, so a re-render never eats a half-typed lead.
   [['alName','full_name'],['alTitle','title'],['alCo','company'],
@@ -1987,12 +1989,12 @@ function wireBoard(){
     const el = document.getElementById(id);
     if(el) el.addEventListener('input', ()=>{ S.addForm2[key] = el.value; });
   });
-  const av = document.getElementById('alVert');
-  if(av) av.addEventListener('change',()=>{ S.addForm2.vertical_id = av.value; });
-  const ar = document.getElementById('alRel');
-  if(ar) ar.addEventListener('change',()=>{ S.addForm2.relationship = ar.value; });
-  const ag = document.getElementById('alGold');
-  if(ag) ag.addEventListener('change',()=>{ S.addForm2.is_gold = ag.checked; });
+  const mlVert = document.getElementById('alVert');
+  if(mlVert) mlVert.addEventListener('change',()=>{ S.addForm2.vertical_id = mlVert.value; });
+  const mlRel = document.getElementById('alRel');
+  if(mlRel) mlRel.addEventListener('change',()=>{ S.addForm2.relationship = mlRel.value; });
+  const mlGold = document.getElementById('alGold');
+  if(mlGold) mlGold.addEventListener('change',()=>{ S.addForm2.is_gold = mlGold.checked; });
 
   const ra = document.getElementById('revertArm');
   if(ra) ra.addEventListener('click',()=>{ S.revertArm=true; S.revertNote=''; render(); });
