@@ -292,6 +292,13 @@
   .lead.flag{border-left-color:var(--red)}
   .lead.gold{border-left-color:var(--orange);background:var(--orange-tint)}
 
+  /* Undo last approval */
+  .revert{margin:14px 10px 20px;padding:12px;border:1px solid var(--line);
+      background:var(--paper)}
+  .revert-n{font-family:var(--mono);font-size:16px;margin:4px 0 8px}
+  .revert-n small{font-size:11px;color:var(--slate);font-weight:400}
+  .revert-btns{display:flex;gap:8px;align-items:center;margin-top:8px}
+
   /* Label editor */
   .lbl-row{display:flex;align-items:center;gap:10px;margin-top:10px;
       padding-top:10px;border-top:1px solid var(--line);flex-wrap:wrap}
@@ -471,6 +478,7 @@ const S = {
   calView:'schedule', invites:null, inviteFilter:'open', inviteBusy:'', inviteErr:'',
   taskDraft:{ title:'', category:'outreach', priority:'2' },
   labels:null, labelOpen:null, labelBusy:'', labelErr:'',
+  lastApproval:null, revertArm:false, revertBusy:false, revertNote:'',
   addOpen:false, addForm:{}, orgQuery:'', orgHits:[], orgBusy:false
 };
 
@@ -671,6 +679,43 @@ async function loadKpis(){
   S.loaded.kpis = true;
 }
 
+async function loadLastApproval(){
+  const { data } = await sb.from('contacts')
+    .select('approval_batch,approved_at')
+    .not('approval_batch','is',null)
+    .order('approved_at',{ascending:false})
+    .limit(1);
+  const row = (data||[])[0] || null;
+  if(!row){ S.lastApproval = null; return; }
+
+  const { count } = await sb.from('contacts')
+    .select('id',{count:'exact',head:true})
+    .eq('approval_batch', row.approval_batch);
+  S.lastApproval = { batch: row.approval_batch, when: row.approved_at, n: count||0 };
+}
+
+async function revertApproval(){
+  if(S.revertBusy) return;
+  S.revertBusy = true; S.revertNote=''; render();
+  try{
+    const { data, error } = await sb.rpc('revert_last_approval');
+    if(error) throw error;
+    const r = Array.isArray(data) ? data[0] : data;
+    const back = r ? Number(r.reverted||0) : 0;
+    const held = r ? Number(r.skipped_sent||0) - back : 0;
+    S.revertNote = back
+      ? `${back} sent back to the review board.` +
+        (held>0 ? ` ${held} stayed approved because they have already been emailed.` : '')
+      : 'Nothing to revert.';
+    S.loaded.leads = false;
+    await loadBatches(); await loadLeadRows();
+    await loadLastApproval();
+  }catch(err){
+    S.revertNote = 'That did not go through: ' + (err.message||err);
+  }
+  S.revertArm = false; S.revertBusy = false; render();
+}
+
 async function loadLabels(){
   const { data } = await sb.from('pipedrive_labels')
     .select('id,name,category,is_excluded').order('name');
@@ -771,6 +816,7 @@ async function ensure(page){
   if(page==='leads'){
     if(!S.loaded.verticals) await loadVerticals();
     if(!S.loaded.labels) await loadLabels();
+    if(S.lastApproval === null) await loadLastApproval();
     if(!S.loaded.leads){ await loadBatches(); await loadLeadRows(); }
     if(!S.loaded.cls) await loadClassifications();
   }
@@ -1807,6 +1853,13 @@ function wireBoard(){
   document.querySelectorAll('[data-decide]').forEach(el=>
     el.addEventListener('click',()=>decideInvite(el.dataset.decide, el.dataset.val)));
 
+  const ra = document.getElementById('revertArm');
+  if(ra) ra.addEventListener('click',()=>{ S.revertArm=true; S.revertNote=''; render(); });
+  const rn = document.getElementById('revertNo');
+  if(rn) rn.addEventListener('click',()=>{ S.revertArm=false; render(); });
+  const rg = document.getElementById('revertGo');
+  if(rg) rg.addEventListener('click', revertApproval);
+
   document.querySelectorAll('[data-lbl-open]').forEach(el=>
     el.addEventListener('click',()=>{
       S.labelOpen = el.dataset.lblOpen || null; S.labelErr=''; render();
@@ -2019,6 +2072,7 @@ function pageLeads(){
         <span class="tick" style="color:var(--slate)">${pending}</span></span>
       </button>
       ${(S.batches||[]).map(batchRow).join('')}
+      ${revertPanel()}
     </nav>
 
     <main class="page wide" style="padding-bottom:0">
@@ -2417,6 +2471,41 @@ const LABEL_GROUPS = [
   ['geography', 'Where'],
   ['state',     'Status']
 ];
+
+function revertPanel(){
+  const la = S.lastApproval;
+  if(!la || !la.n) return '';
+
+  const when = la.when ? new Date(la.when) : null;
+  const ago = when
+    ? (() => {
+        const mins = Math.round((Date.now() - when.getTime()) / 60000);
+        if(mins < 1)  return 'just now';
+        if(mins < 60) return mins + (mins===1?' minute ago':' minutes ago');
+        const hrs = Math.round(mins/60);
+        if(hrs < 24)  return hrs + (hrs===1?' hour ago':' hours ago');
+        const days = Math.round(hrs/24);
+        return days + (days===1?' day ago':' days ago');
+      })()
+    : '';
+
+  return `<div class="revert">
+    <div class="eyebrow">Last approval</div>
+    <div class="revert-n">${num(la.n)} <small>contacts &middot; ${esc(ago)}</small></div>
+
+    ${S.revertNote?`<p class="hint">${esc(S.revertNote)}</p>`:''}
+
+    ${S.revertArm
+      ? `<p class="hint">Sends them back to the review board. The Pipedrive
+           records stay, and anyone already emailed stays approved.</p>
+         <div class="revert-btns">
+           <button class="btn small" id="revertGo" ${S.revertBusy?'disabled':''}>${
+             S.revertBusy?'Working…':'Yes, send back'}</button>
+           <button class="linkbtn" id="revertNo" ${S.revertBusy?'disabled':''}>Cancel</button>
+         </div>`
+      : `<button class="linkbtn" id="revertArm">Undo this approval</button>`}
+  </div>`;
+}
 
 function labelBlock(l){
   const cur = Array.isArray(l.label_ids) ? l.label_ids.map(Number) : [];
