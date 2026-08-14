@@ -292,6 +292,44 @@
   .lead.flag{border-left-color:var(--red)}
   .lead.gold{border-left-color:var(--orange);background:var(--orange-tint)}
 
+  /* CRM search */
+  .crmbox{position:relative;display:flex;align-items:center;margin-left:16px}
+  .crmbox input{width:230px;border:1px solid var(--line);background:#fff;
+      padding:6px 26px 6px 10px;font-size:12px;font-family:var(--sans);color:var(--ink)}
+  .crmbox input:focus{outline:none;border-color:var(--ink)}
+  .crmx{position:absolute;right:4px;border:0;background:none;cursor:pointer;
+      color:var(--slate);font-size:16px;line-height:1;padding:0 4px}
+  .crmwrap{position:relative;z-index:40}
+  .crmres{position:absolute;top:6px;right:16px;width:min(560px,calc(100vw - 32px));
+      max-height:70vh;overflow:auto;background:#fff;border:1px solid var(--ink);
+      box-shadow:0 12px 32px rgba(0,0,0,.14);padding:12px 14px}
+  .crmres-head{display:flex;justify-content:space-between;align-items:center;
+      margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  .hit{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;
+      padding:9px 0;border-bottom:1px solid var(--line)}
+  .hit:last-child{border-bottom:0}
+  .hit.gold{background:var(--orange-tint);margin:0 -14px;padding-left:14px;padding-right:14px}
+  .hit-main{min-width:0}
+  .hit-top{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .hit-kind{font-family:var(--mono);font-size:9px;letter-spacing:.08em;
+      color:var(--slate);text-transform:uppercase}
+  .hit-sub{font-size:12px;color:var(--slate);margin-top:2px}
+  .hit-meta{display:flex;gap:10px;flex-wrap:wrap;margin-top:3px;
+      font-family:var(--mono);font-size:11px;color:var(--slate)}
+  .hit-none{font-family:var(--mono);font-size:10px;color:var(--slate);white-space:nowrap}
+
+  /* Add one lead */
+  .addlead{margin:10px;padding:12px;border:1px solid var(--line);background:var(--paper)}
+  .addlead.busy{opacity:.55;pointer-events:none}
+  .addlead .field{margin-bottom:8px}
+  .addlead .field label{display:block;font-family:var(--mono);font-size:10px;
+      letter-spacing:.06em;text-transform:uppercase;color:var(--slate);margin-bottom:3px}
+  .addlead input[type=text],.addlead input[type=email],.addlead select{
+      width:100%;border:1px solid var(--line);background:#fff;padding:6px 8px;
+      font-size:12px;font-family:var(--sans);color:var(--ink)}
+  .alcheck{display:flex;align-items:center;gap:7px;margin:10px 0;font-size:12px}
+  .alfoot{display:flex;gap:8px;align-items:center;margin-top:8px}
+
   /* Undo last approval */
   .revert{margin:14px 10px 20px;padding:12px;border:1px solid var(--line);
       background:var(--paper)}
@@ -479,6 +517,10 @@ const S = {
   taskDraft:{ title:'', category:'outreach', priority:'2' },
   labels:null, labelOpen:null, labelBusy:'', labelErr:'',
   lastApproval:null, revertArm:false, revertBusy:false, revertNote:'',
+  crmQ:'', crmHits:null, crmBusy:false, crmOpen:false, crmSeq:0,
+  addOpen:false, addBusy:false, addNote:'',
+  addForm2:{ full_name:'', title:'', email:'', phone:'', company:'',
+             vertical_id:'', relationship:'', is_gold:false },
   addOpen:false, addForm:{}, orgQuery:'', orgHits:[], orgBusy:false
 };
 
@@ -679,6 +721,61 @@ async function loadKpis(){
   S.loaded.kpis = true;
 }
 
+async function crmSearch(q){
+  S.crmQ = q;
+  const term = String(q||'').trim();
+  if(term.length < 2){
+    S.crmHits = null; S.crmBusy = false;
+    S.crmFocus = true; render(); S.crmFocus = false; return;
+  }
+
+  // Every keystroke fires, so a slow early query must not overwrite the
+  // results of a later, more specific one.
+  const seq = ++S.crmSeq;
+  S.crmBusy = true; S.crmFocus = true; render(); S.crmFocus = false;
+
+  const { data, error } = await sb.rpc('crm_search', { q: term, lim: 40 });
+  if(seq !== S.crmSeq) return;
+
+  S.crmHits = error ? [] : (data || []);
+  S.crmErr  = error ? error.message : '';
+  S.crmBusy = false;
+  S.crmFocus = true; render(); S.crmFocus = false;
+}
+
+async function submitManualLead(){
+  if(S.addBusy) return;
+  const f = S.addForm2;
+  if(!String(f.full_name||'').trim()){
+    S.addNote = 'A name is needed.'; return render();
+  }
+  S.addBusy = true; S.addNote=''; render();
+  try{
+    const { data, error } = await sb.rpc('add_manual_lead', {
+      p_full_name: f.full_name.trim(),
+      p_first: f.full_name.trim().split(/\s+/)[0] || '',
+      p_last:  f.full_name.trim().split(/\s+/).slice(1).join(' '),
+      p_title: f.title, p_email: f.email, p_phone: f.phone,
+      p_company: f.company, p_domain: '',
+      p_vertical_id: f.vertical_id ? Number(f.vertical_id) : null,
+      p_relationship: f.relationship,
+      p_is_gold: !!f.is_gold
+    });
+    if(error) throw error;
+    const r = Array.isArray(data) ? data[0] : data;
+    S.addNote = r && r.outcome === 'added'
+      ? `${f.full_name.trim()} added, waiting on the review board.`
+      : `${f.full_name.trim()} was already in the database. Filled in what was missing.`;
+    S.addForm2 = { full_name:'', title:'', email:'', phone:'', company:'',
+                   vertical_id: f.vertical_id, relationship:'', is_gold: f.is_gold };
+    S.loaded.leads = false;
+    await loadBatches(); await loadLeadRows();
+  }catch(err){
+    S.addNote = 'That did not go through: ' + (err.message||err);
+  }
+  S.addBusy = false; render();
+}
+
 async function loadLastApproval(){
   const { data } = await sb.from('contacts')
     .select('approval_batch,approved_at')
@@ -738,7 +835,8 @@ async function saveLeadLabels(contactId, ids){
 }
 
 async function loadVerticals(){
-  const { data } = await sb.from('verticals').select('slug,name').order('name');
+  // id is needed by the manual lead form, which writes vertical_id directly.
+  const { data } = await sb.from('verticals').select('id,slug,name').order('name');
   S.verticals = data || [];
   if(!S.impVert && S.verticals.length) S.impVert = S.verticals[0].slug;
   S.loaded.verticals = true;
@@ -830,6 +928,11 @@ function topbar(){
     <nav class="tabs">
       ${PAGES.map(([k,l])=>`<button class="tab ${S.page===k?'on':''}" data-page="${k}">${l}</button>`).join('')}
     </nav>
+    <div class="crmbox">
+      <input type="search" id="crmQ" value="${esc(S.crmQ)}" autocomplete="off"
+             placeholder="Search contacts and companies" aria-label="Search the CRM" />
+      ${S.crmQ?`<button class="crmx" id="crmClear" aria-label="Clear">&times;</button>`:''}
+    </div>
     <span class="spacer"></span>
     <span class="tally">${esc(prettyDate())}</span>
     ${S.board.length?`<span class="tally"><b>${done}</b> / ${S.board.length} cleared</span>`:''}
@@ -846,6 +949,24 @@ function wireChrome(){
       catch(err){ S.err = 'Could not load this tab. ' + (err.message || err); }
       render();
     }));
+  const cq = document.getElementById('crmQ');
+  if(cq){
+    cq.addEventListener('input', ()=>{ S.crmOpen = true; crmSearch(cq.value); });
+    cq.addEventListener('focus', ()=>{ if(S.crmQ) { S.crmOpen = true; render(); } });
+    cq.addEventListener('keydown', e=>{ if(e.key==='Escape'){ S.crmOpen=false; render(); } });
+    if(S.crmFocus){
+      cq.focus();
+      const n = cq.value.length;
+      try{ cq.setSelectionRange(n, n); }catch(e){}
+    }
+  }
+  const cc = document.getElementById('crmClose');
+  if(cc) cc.addEventListener('click', ()=>{ S.crmOpen=false; render(); });
+  const cx = document.getElementById('crmClear');
+  if(cx) cx.addEventListener('click', ()=>{
+    S.crmQ=''; S.crmHits=null; S.crmOpen=false; render();
+  });
+
   const b = document.getElementById('signout');
   if(b) b.addEventListener('click', async ()=>{ await sb.auth.signOut(); renderLogin(); });
 }
@@ -857,7 +978,7 @@ function render(){
   if(S.page==='kpis')     inner = pageKpis();
   if(S.page==='myday')    inner = pageMyDay();
   if(S.page==='leads')    inner = pageLeads();
-  app.innerHTML = topbar() + inner;
+  app.innerHTML = topbar() + crmPanel() + inner;
   wireChrome();
   wirePage();
 }
@@ -1853,6 +1974,26 @@ function wireBoard(){
   document.querySelectorAll('[data-decide]').forEach(el=>
     el.addEventListener('click',()=>decideInvite(el.dataset.decide, el.dataset.val)));
 
+  const ao = document.getElementById('addOpen');
+  if(ao) ao.addEventListener('click',()=>{ S.addOpen=!S.addOpen; S.addNote=''; render(); });
+  const ax = document.getElementById('alClose');
+  if(ax) ax.addEventListener('click',()=>{ S.addOpen=false; render(); });
+  const asv = document.getElementById('alSave');
+  if(asv) asv.addEventListener('click', submitManualLead);
+
+  // Bound to state, so a re-render never eats a half-typed lead.
+  [['alName','full_name'],['alTitle','title'],['alCo','company'],
+   ['alEmail','email'],['alPhone','phone']].forEach(([id,key])=>{
+    const el = document.getElementById(id);
+    if(el) el.addEventListener('input', ()=>{ S.addForm2[key] = el.value; });
+  });
+  const av = document.getElementById('alVert');
+  if(av) av.addEventListener('change',()=>{ S.addForm2.vertical_id = av.value; });
+  const ar = document.getElementById('alRel');
+  if(ar) ar.addEventListener('change',()=>{ S.addForm2.relationship = ar.value; });
+  const ag = document.getElementById('alGold');
+  if(ag) ag.addEventListener('change',()=>{ S.addForm2.is_gold = ag.checked; });
+
   const ra = document.getElementById('revertArm');
   if(ra) ra.addEventListener('click',()=>{ S.revertArm=true; S.revertNote=''; render(); });
   const rn = document.getElementById('revertNo');
@@ -2065,8 +2206,12 @@ function pageLeads(){
     <nav class="board">
       <div class="board-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
         <span class="eyebrow">Batches</span>
-        <button class="btn small" id="impOpen">Import CSV</button>
+        <div style="display:flex;gap:6px">
+          <button class="btn small ghost" id="addOpen">Add one</button>
+          <button class="btn small" id="impOpen">Import CSV</button>
+        </div>
       </div>
+      ${addLeadForm()}
       <button class="row ${S.batchId==='all'?'active':''}" data-batch="all">
         <span class="row-top"><span class="name">Everything awaiting review</span>
         <span class="tick" style="color:var(--slate)">${pending}</span></span>
@@ -2471,6 +2616,112 @@ const LABEL_GROUPS = [
   ['geography', 'Where'],
   ['state',     'Status']
 ];
+
+function addLeadForm(){
+  if(!S.addOpen) return '';
+  const f = S.addForm2;
+  const vopts = (S.verticals||[]).map(v=>{
+    const id = v.id != null ? v.id : '';
+    return `<option value="${esc(String(id))}" ${String(f.vertical_id)===String(id)?'selected':''}>${esc(v.name)}</option>`;
+  }).join('');
+
+  const RELS = ['','Owner','Developer','Architect','Engineer',
+                'Construction Manager','Broker','Property Manager'];
+
+  return `<div class="addlead ${S.addBusy?'busy':''}">
+    <div class="field"><label for="alName">Name</label>
+      <input type="text" id="alName" value="${esc(f.full_name)}"
+             placeholder="Dana Whitfield" autocomplete="off" /></div>
+
+    <div class="field"><label for="alTitle">Title</label>
+      <input type="text" id="alTitle" value="${esc(f.title)}"
+             placeholder="Director of Facilities" autocomplete="off" /></div>
+
+    <div class="field"><label for="alCo">Company</label>
+      <input type="text" id="alCo" value="${esc(f.company)}"
+             placeholder="Delta Property Group" autocomplete="off" /></div>
+
+    <div class="field"><label for="alEmail">Email</label>
+      <input type="email" id="alEmail" value="${esc(f.email)}"
+             placeholder="dana@deltaproperty.com" autocomplete="off" /></div>
+
+    <div class="field"><label for="alPhone">Phone</label>
+      <input type="text" id="alPhone" value="${esc(f.phone)}"
+             placeholder="(209) 555 0142" autocomplete="off" /></div>
+
+    <div class="field"><label for="alVert">Sector</label>
+      <select id="alVert"><option value="">Not set</option>${vopts}</select></div>
+
+    <div class="field"><label for="alRel">What they do</label>
+      <select id="alRel">${RELS.map(r=>
+        `<option value="${esc(r)}" ${f.relationship===r?'selected':''}>${
+          r || 'Not set'}</option>`).join('')}</select></div>
+
+    <label class="alcheck">
+      <input type="checkbox" id="alGold" ${f.is_gold?'checked':''} />
+      <span>On Pat's Gold list</span>
+    </label>
+
+    ${S.addNote?`<p class="hint">${esc(S.addNote)}</p>`:''}
+
+    <div class="alfoot">
+      <button class="btn small" id="alSave" ${S.addBusy?'disabled':''}>${
+        S.addBusy?'Saving…':'Add lead'}</button>
+      <button class="linkbtn" id="alClose" ${S.addBusy?'disabled':''}>Close</button>
+    </div>
+    <p class="hint">Lands on the review board as pending, same as an import,
+      so it picks up labels and the approve path.</p>
+  </div>`;
+}
+
+function crmPanel(){
+  if(!S.crmOpen || String(S.crmQ||'').trim().length < 2) return '';
+
+  const hits = S.crmHits;
+  const body = S.crmBusy && !hits
+    ? `<p class="hint">Searching…</p>`
+    : !hits || !hits.length
+      ? `<p class="hint">Nothing matches that. Names, email addresses,
+           job titles, company names and domains are all searched.</p>`
+      : hits.map(h=>{
+          const pd = h.pipedrive_id
+            ? (h.kind === 'company'
+               ? `https://app.pipedrive.com/organization/${h.pipedrive_id}`
+               : `https://app.pipedrive.com/person/${h.pipedrive_id}`)
+            : '';
+          return `<div class="hit ${h.is_gold?'gold':''}">
+            <div class="hit-main">
+              <div class="hit-top">
+                <span class="hit-kind">${h.kind === 'company' ? 'Company' : 'Contact'}</span>
+                <b>${esc(h.label||'')}</b>
+                ${h.is_gold?`<span class="chip gold">Pat's Gold</span>`:''}
+                ${h.status && h.status!=='approved'
+                  ? `<span class="chip">${esc(h.status)}</span>` : ''}
+                ${h.vertical?`<span class="chip">${esc(h.vertical)}</span>`:''}
+              </div>
+              ${h.sub?`<div class="hit-sub">${esc(h.sub)}</div>`:''}
+              <div class="hit-meta">
+                ${h.email?`<a href="mailto:${esc(h.email)}">${esc(h.email)}</a>`:''}
+                ${h.phone?`<span>${esc(h.phone)}</span>`:''}
+                ${h.detail?`<span>${esc(h.detail)}</span>`:''}
+              </div>
+            </div>
+            ${pd?`<a class="chip" href="${pd}" target="_blank" rel="noopener">Pipedrive</a>`
+                :`<span class="hit-none" title="Not in Pipedrive yet">Not in CRM</span>`}
+          </div>`;
+        }).join('');
+
+  return `<div class="crmwrap">
+    <div class="crmres">
+      <div class="crmres-head">
+        <span class="eyebrow">${hits ? hits.length + (hits.length===40?'+':'') + ' found' : 'Searching'}</span>
+        <button class="linkbtn" id="crmClose">Close</button>
+      </div>
+      ${S.crmErr?`<p class="hint err">${esc(S.crmErr)}</p>`:''}
+      ${body}
+    </div>
+  </div>`;
+}
 
 function revertPanel(){
   const la = S.lastApproval;
