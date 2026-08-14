@@ -292,6 +292,23 @@
   .lead.flag{border-left-color:var(--red)}
   .lead.gold{border-left-color:var(--orange);background:var(--orange-tint)}
 
+  /* Label editor */
+  .lbl-row{display:flex;align-items:center;gap:10px;margin-top:10px;
+      padding-top:10px;border-top:1px solid var(--line);flex-wrap:wrap}
+  .lbl-cur{display:flex;gap:5px;flex-wrap:wrap;flex:1;min-width:0}
+  .lbl-cur .none{color:var(--slate);font-size:12px}
+  .chip.warnchip{border-color:var(--red);color:var(--red)}
+  .lbl-edit{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+  .lbl-edit.busy{opacity:.55;pointer-events:none}
+  .lbl-grp{margin-bottom:10px}
+  .lbl-opts{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}
+  .lbl-opt{border:1px solid var(--line);background:#fff;padding:4px 9px;
+      font-size:12px;cursor:pointer;color:var(--slate)}
+  .lbl-opt.on{border-color:var(--ink);background:var(--ink);color:#fff}
+  .lbl-opt.ex.on{border-color:var(--red);background:var(--red);color:#fff}
+  .lbl-foot{display:flex;justify-content:space-between;align-items:center;
+      gap:10px;flex-wrap:wrap;margin-top:4px}
+
   /* Event invites */
   .kswitch .dot{display:inline-block;min-width:16px;padding:0 4px;margin-left:5px;
       border-radius:8px;background:var(--orange);color:#fff;
@@ -452,6 +469,8 @@ const S = {
   /* board */
   kpiView:'scorecard', boardPipe:null, dealId:null, dealBusy:false, dealErr:'',
   calView:'schedule', invites:null, inviteFilter:'open', inviteBusy:'', inviteErr:'',
+  taskDraft:{ title:'', category:'outreach', priority:'2' },
+  labels:null, labelOpen:null, labelBusy:'', labelErr:'',
   addOpen:false, addForm:{}, orgQuery:'', orgHits:[], orgBusy:false
 };
 
@@ -652,6 +671,27 @@ async function loadKpis(){
   S.loaded.kpis = true;
 }
 
+async function loadLabels(){
+  const { data } = await sb.from('pipedrive_labels')
+    .select('id,name,category,is_excluded').order('name');
+  S.labels = data || [];
+  S.loaded.labels = true;
+}
+
+async function saveLeadLabels(contactId, ids){
+  if(S.labelBusy) return;
+  S.labelBusy = contactId; S.labelErr=''; render();
+  const { error } = await sb.from('contacts')
+    .update({ label_ids: ids }).eq('id', contactId);
+  if(error){ S.labelErr = error.message; }
+  else {
+    // Keep the row in hand rather than refetching six hundred leads.
+    const row = (S.leads||[]).find(l=>l.contact_id===contactId);
+    if(row) row.label_ids = ids;
+  }
+  S.labelBusy=''; render();
+}
+
 async function loadVerticals(){
   const { data } = await sb.from('verticals').select('slug,name').order('name');
   S.verticals = data || [];
@@ -730,6 +770,7 @@ async function ensure(page){
   if(page==='myday' && !S.loaded.tasks) await loadTasks();
   if(page==='leads'){
     if(!S.loaded.verticals) await loadVerticals();
+    if(!S.loaded.labels) await loadLabels();
     if(!S.loaded.leads){ await loadBatches(); await loadLeadRows(); }
     if(!S.loaded.cls) await loadClassifications();
   }
@@ -799,7 +840,22 @@ function wirePage(){
   const add = document.getElementById('addTask');
   if(add) add.addEventListener('click', addTask);
   const ti = document.getElementById('taskTitle');
-  if(ti) ti.addEventListener('keydown', e=>{ if(e.key==='Enter') addTask(); });
+  if(ti){
+    /* render() replaces the whole DOM via innerHTML, so an unbound input
+       loses whatever was half-typed the moment anything else refreshes.
+       Mirroring into state is how the deal and import forms already work. */
+    ti.addEventListener('input', ()=>{ S.taskDraft.title = ti.value; });
+    ti.addEventListener('keydown', e=>{ if(e.key==='Enter') addTask(); });
+    if(S.taskFocus){
+      ti.focus();
+      const n = ti.value.length;
+      try{ ti.setSelectionRange(n, n); }catch(e){}
+    }
+  }
+  const tc = document.getElementById('taskCat');
+  if(tc) tc.addEventListener('change', ()=>{ S.taskDraft.category = tc.value; });
+  const tp = document.getElementById('taskPri');
+  if(tp) tp.addEventListener('change', ()=>{ S.taskDraft.priority = tp.value; });
   document.querySelectorAll('[data-task-toggle]').forEach(el=>
     el.addEventListener('click',()=>cycleTask(el.dataset.taskToggle)));
   document.querySelectorAll('[data-task-del]').forEach(el=>
@@ -1751,6 +1807,25 @@ function wireBoard(){
   document.querySelectorAll('[data-decide]').forEach(el=>
     el.addEventListener('click',()=>decideInvite(el.dataset.decide, el.dataset.val)));
 
+  document.querySelectorAll('[data-lbl-open]').forEach(el=>
+    el.addEventListener('click',()=>{
+      S.labelOpen = el.dataset.lblOpen || null; S.labelErr=''; render();
+    }));
+
+  document.querySelectorAll('[data-lbl-toggle]').forEach(el=>
+    el.addEventListener('click',()=>{
+      const cid = el.dataset.lblToggle;
+      const id  = Number(el.dataset.lblId);
+      const row = (S.leads||[]).find(l=>l.contact_id===cid);
+      if(!row) return;
+      const cur = Array.isArray(row.label_ids) ? row.label_ids.map(Number) : [];
+      // Writing label_ids replaces the array rather than adding to it, which
+      // is how the re-engagement flow used to strip labels off people. Build
+      // the full set here and send all of it.
+      const next = cur.includes(id) ? cur.filter(x=>x!==id) : cur.concat([id]);
+      saveLeadLabels(cid, next);
+    }));
+
   const bp = document.getElementById('bPipe');
   if(bp) bp.addEventListener('change',()=>{ S.boardPipe = bp.value; render(); });
 
@@ -1857,11 +1932,14 @@ function pageMyDay(){
       <h2 class="sec">Add a task</h2>
       <div class="taskbar">
         <div><label class="eyebrow" for="taskTitle">What</label>
-          <input type="text" id="taskTitle" placeholder="Write the Q3 blog post" /></div>
+          <input type="text" id="taskTitle" placeholder="Write the Q3 blog post"
+                 value="${esc(S.taskDraft.title)}" autocomplete="off" /></div>
         <div><label class="eyebrow" for="taskCat">Area</label>
-          <select id="taskCat">${CATS.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></div>
+          <select id="taskCat">${CATS.map(c=>`<option value="${c}" ${
+            S.taskDraft.category===c?'selected':''}>${c}</option>`).join('')}</select></div>
         <div><label class="eyebrow" for="taskPri">Priority</label>
-          <select id="taskPri"><option value="2">Normal</option><option value="1">High</option><option value="3">Low</option></select></div>
+          <select id="taskPri">${[['2','Normal'],['1','High'],['3','Low']].map(([v,l])=>
+            `<option value="${v}" ${S.taskDraft.priority===v?'selected':''}>${l}</option>`).join('')}</select></div>
         <button class="btn" id="addTask">Add</button>
       </div>
       ${S.err?`<p class="hint err">${esc(S.err)}</p>`:''}
@@ -2296,6 +2374,8 @@ function leadHtml(l){
       ${facts.length?`<dl class="facts">${facts.map(([k,v])=>
         `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>`:''}
 
+      ${labelBlock(l)}
+
       ${open?`<div class="more">
         ${l.company_description?`<p>${esc(l.company_description)}</p>`:''}
         ${l.company_keywords?`<p class="mono muted">${esc(l.company_keywords)}</p>`:''}
@@ -2325,6 +2405,63 @@ function actionBar(kept, total){
       <button class="btn small ghost" id="leadAll">Select all</button>
       <button class="btn small ghost" id="leadReject" ${kept?'':'disabled'}>Reject</button>
       <button class="btn small accent" id="leadApprove" ${kept?'':'disabled'}>Approve to Pipedrive</button>
+    </div>
+  </div>`;
+}
+
+/* ---------- Label editor on the review board --------------------------- */
+
+const LABEL_GROUPS = [
+  ['vertical',  'Sector'],
+  ['role',      'What they do'],
+  ['geography', 'Where'],
+  ['state',     'Status']
+];
+
+function labelBlock(l){
+  const cur = Array.isArray(l.label_ids) ? l.label_ids.map(Number) : [];
+  const all = S.labels || [];
+  const open = S.labelOpen === l.contact_id;
+  const busy = S.labelBusy === l.contact_id;
+  const byId = id => all.find(x => Number(x.id) === Number(id));
+
+  const applied = cur.map(byId).filter(Boolean);
+
+  if(!open){
+    return `<div class="lbl-row">
+      <div class="lbl-cur">
+        ${applied.length
+          ? applied.map(x=>`<span class="chip ${x.is_excluded?'warnchip':''}">${esc(x.name)}</span>`).join('')
+          : `<span class="none">No labels yet</span>`}
+      </div>
+      <button class="linkbtn" data-lbl-open="${l.contact_id}">Edit labels</button>
+    </div>`;
+  }
+
+  const groups = LABEL_GROUPS.map(([cat, heading])=>{
+    const opts = all.filter(x => x.category === cat);
+    if(!opts.length) return '';
+    return `<div class="lbl-grp">
+      <div class="eyebrow">${heading}</div>
+      <div class="lbl-opts">
+        ${opts.map(x=>{
+          const on = cur.includes(Number(x.id));
+          return `<button class="lbl-opt ${on?'on':''} ${x.is_excluded?'ex':''}"
+            data-lbl-toggle="${l.contact_id}" data-lbl-id="${x.id}"
+            ${busy?'disabled':''}
+            title="${x.is_excluded?'Carrying this label keeps them out of the outreach queue':''}">${
+            esc(x.name)}</button>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }).join('');
+
+  return `<div class="lbl-edit ${busy?'busy':''}">
+    ${groups}
+    ${S.labelErr?`<p class="hint err">${esc(S.labelErr)}</p>`:''}
+    <div class="lbl-foot">
+      <span class="hint">Saved as you click. These reach Pipedrive when the lead is approved.</span>
+      <button class="linkbtn" data-lbl-open="">Done</button>
     </div>
   </div>`;
 }
@@ -2695,10 +2832,13 @@ async function generateAcross(){
 
 async function addTask(){
   const el = document.getElementById('taskTitle');
-  const title = el.value.trim();
-  if(!title){ el.focus(); return; }
-  const category = document.getElementById('taskCat').value;
-  const priority = Number(document.getElementById('taskPri').value);
+  if(el) S.taskDraft.title = el.value;
+
+  const title = String(S.taskDraft.title || '').trim();
+  if(!title){ S.taskFocus = true; render(); S.taskFocus = false; return; }
+
+  const category = S.taskDraft.category;
+  const priority = Number(S.taskDraft.priority);
   S.err='';
   try{
     const { error } = await sb.from('tasks').insert({
@@ -2706,9 +2846,15 @@ async function addTask(){
       work_date: today(), sort_order: (S.tasks||[]).length
     });
     if(error) throw error;
-    await loadTasks(); render();
-    const n = document.getElementById('taskTitle'); if(n) n.focus();
-  }catch(err){ S.err = err.message||String(err); render(); }
+    // Clear the text but keep area and priority: tasks come in runs.
+    S.taskDraft.title = '';
+    await loadTasks();
+    S.taskFocus = true; render(); S.taskFocus = false;
+  }catch(err){
+    // The typed text survives the error, so nothing has to be retyped.
+    S.err = err.message||String(err);
+    S.taskFocus = true; render(); S.taskFocus = false;
+  }
 }
 
 async function cycleTask(id){
