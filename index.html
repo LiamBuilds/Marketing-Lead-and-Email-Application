@@ -385,6 +385,40 @@
   .inv-acts{display:flex;gap:5px;flex-wrap:wrap}
   .inv-links{display:flex;gap:6px;align-items:center}
   .inv-box{font-family:var(--mono);font-size:10px;color:var(--slate)}
+
+  /* ---------- approvals ---------- */
+  /* Deliberately the same shape as .inv. Pat already reads invite cards,
+     so an approval that looks like something else is a thing to learn
+     rather than a thing to use. */
+  .apv{border:1px solid var(--rule);border-left:3px solid var(--rule);
+       background:var(--card);padding:14px 16px;margin-bottom:10px}
+  .apv.busy{opacity:.55;pointer-events:none}
+  .apv.approved{border-left-color:var(--green)}
+  .apv.changes{border-left-color:var(--orange)}
+  .apv.declined{border-left-color:var(--red);opacity:.7}
+  .apv-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+  .apv-head h4{margin:0;font-size:15px}
+  .apv-kind{color:var(--slate);font-size:12px;margin-top:2px}
+  .apv-desc{margin:9px 0 0;font-size:13.5px;line-height:1.5;color:var(--grey)}
+  .apv-file{display:flex;align-items:center;gap:9px;margin-top:11px;flex-wrap:wrap}
+  .apv-prev{margin-top:12px;padding:10px 12px;background:var(--wash);
+            border-left:3px solid var(--orange)}
+  .apv-prev .eyebrow{color:#8A4A05}
+  .apv-prev p{margin:5px 0 0;font-size:13px;color:var(--grey);white-space:pre-wrap}
+  .apv-mine{margin-top:10px;padding:10px 12px;background:var(--wash);
+            border-left:3px solid var(--slate)}
+  .apv-mine p{margin:5px 0 0;font-size:13px;color:var(--grey);white-space:pre-wrap}
+  .apv-foot{display:flex;justify-content:space-between;align-items:center;
+            gap:10px;margin-top:13px;flex-wrap:wrap}
+  .apv-acts{display:flex;gap:5px;flex-wrap:wrap}
+  .apv-hist{margin-top:11px;border-top:1px solid var(--rule-soft);padding-top:10px}
+  .apv-hist .ver{padding:7px 0;border-bottom:1px solid var(--rule-soft);font-size:13px}
+  .apv-hist .ver:last-child{border-bottom:0}
+  .apv-thumb{max-width:100%;max-height:340px;display:block;margin-top:11px;
+             border:1px solid var(--rule)}
+  .tab .badge{display:inline-block;min-width:16px;padding:0 4px;margin-left:5px;
+      border-radius:8px;background:var(--orange);color:#fff;
+      font-family:var(--mono);font-size:10px;line-height:16px;text-align:center}
   .chip.gold{border-color:var(--orange);background:var(--orange);color:#fff}
   .lead .pick{display:flex;align-items:flex-start;justify-content:center;
               padding-top:16px;cursor:pointer}
@@ -493,7 +527,7 @@ const KIND = { meeting:'Meeting', networking:'Event', site_visit:'Site visit',
 
 const PAGES = [
   ['today','Outreach'], ['calendar',"Pat's Calendar"],
-  ['kpis','Pipeline & KPIs'], ['myday',"Liam's Day"],
+  ['kpis','Pipeline & KPIs'], ['approvals','Approvals'], ['myday',"Liam's Day"],
   ['iyanna',"Iyanna's Day"], ['leads','Leads']
 ];
 
@@ -509,6 +543,11 @@ const S = {
   /* Two people now have lists, so tasks is keyed by owner rather than
      being one array. loaded.tasks follows the same shape. */
   tasks:{}, seq:null, loaded:{ tasks:{} }, me:'liam', dayOwner:'liam',
+  /* approvals */
+  approvals:null, apvUrls:{}, apvFilter:'pending', apvBusy:'', apvErr:'',
+  apvNote:'', apvHist:{}, apvOpen:false, apvSaving:false, apvFile:null,
+  apvForm:{ title:'', kind:'design', description:'', link_url:'', due_by:'' },
+  apvReplyTo:null, apvReply:'',
   /* leads */
   batches:null, leads:null, verticals:[], batchId:'all', leadFilter:'all',
   picked:new Set(), leadOpen:{}, leadNote:'', leadErr:'', leadProg:null,
@@ -643,6 +682,159 @@ async function loadInvites(){
   if(error) S.inviteErr = error.message;
   S.invites = data || [];
   S.loaded.invites = true;
+}
+
+/* ================= approvals ================= */
+/* Each resubmission is a new row pointing at the one it replaces, rather
+   than an edit in place. Pat needs to see what he asked for sitting next
+   to what he is now looking at, or every round is a fresh review. It also
+   means his feedback reaches the next version in his own words instead of
+   being summarised by the person acting on it. */
+
+async function loadApprovals(){
+  const { data, error } = await sb.from('approvals').select('*')
+    .order('created_at', { ascending:false });
+  if(error) throw error;
+  S.approvals = data || [];
+
+  /* Private bucket, so every file needs a signed URL. One hour is long
+     enough to review and short enough that a copied link goes stale. */
+  S.apvUrls = {};
+  const withFiles = S.approvals.filter(a => a.file_path);
+  if(withFiles.length){
+    const paths = [...new Set(withFiles.map(a => a.file_path))];
+    try{
+      const { data:urls } = await sb.storage.from('approvals')
+        .createSignedUrls(paths, 3600);
+      for(const u of (urls||[])) if(u && u.path && u.signedUrl) S.apvUrls[u.path] = u.signedUrl;
+    }catch(e){ /* the card falls back to a filename with no preview */ }
+  }
+  S.loaded.approvals = true;
+}
+
+/* A row is current if nothing else claims it as a parent. Superseded
+   versions stay in the table and surface inside the card rather than
+   cluttering the list Pat has to work through. */
+function apvCurrent(){
+  const all = S.approvals || [];
+  const parents = new Set(all.map(a => a.parent_id).filter(Boolean));
+  return all.filter(a => !parents.has(a.id));
+}
+
+function apvChain(row){
+  const byId = new Map((S.approvals||[]).map(a => [a.id, a]));
+  const chain = [];
+  let cur = row ? byId.get(row.parent_id) : null;
+  let guard = 0;
+  while(cur && guard++ < 40){ chain.push(cur); cur = byId.get(cur.parent_id); }
+  return chain;   // newest previous version first
+}
+
+function apvPendingCount(){
+  return apvCurrent().filter(a => a.status === 'pending').length;
+}
+
+async function decideApproval(id, status){
+  if(S.apvBusy) return;
+  const row = (S.approvals||[]).find(a => a.id === id);
+  if(!row) return;
+
+  let feedback = null;
+  if(status === 'changes'){
+    /* Required. "Request changes" with no note gives the next version
+       nothing to answer, which is the failure this whole tab exists
+       to avoid. */
+    feedback = prompt('What needs to change?\n\nThis shows on the next version, so it is worth being specific.');
+    if(feedback === null) return;
+    if(!String(feedback).trim()){
+      S.apvErr = 'Changes need a note saying what to change.';
+      return render();
+    }
+  } else if(status === 'declined'){
+    feedback = prompt('Why? Optional, but useful later.') || null;
+  }
+
+  S.apvBusy = id; S.apvErr = ''; render();
+  let who = null;
+  try{ const { data } = await sb.auth.getUser(); who = data && data.user ? data.user.email : null; }
+  catch(e){ who = null; }
+
+  try{
+    const patch = { status, decided_by: who, decided_at: new Date().toISOString() };
+    if(feedback !== null) patch.feedback = String(feedback).trim();
+    const { error } = await sb.from('approvals').update(patch).eq('id', id);
+    if(error) throw error;
+    S.loaded.approvals = false;
+    await loadApprovals();
+  }catch(err){ S.apvErr = err.message || String(err); }
+  S.apvBusy = ''; render();
+}
+
+async function submitApproval(){
+  if(S.apvSaving) return;
+  const f = S.apvForm;
+  const parent = S.apvReplyTo
+    ? (S.approvals||[]).find(a => a.id === S.apvReplyTo)
+    : null;
+
+  if(!parent && !String(f.title||'').trim()){
+    S.apvErr = 'It needs a title.'; return render();
+  }
+  if(parent && !String(S.apvReply||'').trim()){
+    S.apvErr = 'Say what you changed, so Pat can check it against what he asked for.';
+    return render();
+  }
+  if(!S.apvFile && !String(f.link_url||'').trim() && !parent){
+    S.apvErr = 'Attach a file or paste a link.'; return render();
+  }
+
+  S.apvSaving = true; S.apvErr = ''; render();
+  let who = '';
+  try{ const { data } = await sb.auth.getUser(); who = (data && data.user && data.user.email) || ''; }
+  catch(e){ who = ''; }
+
+  try{
+    let filePath = null, fileName = null, fileType = null;
+    if(S.apvFile){
+      const stamp = Date.now().toString(36);
+      const safe = S.apvFile.name.replace(/[^A-Za-z0-9._-]/g, '_');
+      filePath = `${stamp}-${Math.random().toString(36).slice(2,8)}/${safe}`;
+      const { error:upErr } = await sb.storage.from('approvals')
+        .upload(filePath, S.apvFile, { upsert:false });
+      if(upErr) throw upErr;
+      fileName = S.apvFile.name;
+      fileType = S.apvFile.type || '';
+    }
+
+    const row = {
+      title:       parent ? parent.title : String(f.title).trim(),
+      kind:        parent ? parent.kind  : f.kind,
+      description: parent ? parent.description : (String(f.description||'').trim() || null),
+      link_url:    String(f.link_url||'').trim() || null,
+      file_path:   filePath, file_name: fileName, file_type: fileType,
+      requested_by: who, status:'pending',
+      due_by:      String(f.due_by||'').trim() || null
+    };
+    if(parent){
+      row.parent_id  = parent.id;
+      row.version    = Number(parent.version || 1) + 1;
+      row.change_note = String(S.apvReply).trim();
+    }
+
+    const { error } = await sb.from('approvals').insert(row);
+    if(error) throw error;
+
+    S.apvNote = parent
+      ? `Version ${row.version} sent to Pat.`
+      : `${row.title} sent to Pat.`;
+    S.apvOpen = false; S.apvReplyTo = null; S.apvReply = ''; S.apvFile = null;
+    S.apvForm = { title:'', kind:'design', description:'', link_url:'', due_by:'' };
+    S.loaded.approvals = false;
+    await loadApprovals();
+  }catch(err){
+    S.apvErr = 'That did not go through: ' + (err.message || err);
+  }
+  S.apvSaving = false; render();
 }
 
 async function decideInvite(id, decision){
@@ -942,6 +1134,7 @@ async function ensure(page){
   }
   if(page==='calendar' && !S.loaded.week) await loadWeek();
   if(page==='calendar' && !S.loaded.invites) await loadInvites();
+  if(page==='approvals' && !S.loaded.approvals) await loadApprovals();
   if(page==='kpis'){
     if(!S.loaded.kpis) await loadKpis();
     if(!S.loaded.metrics) await loadMetrics();
@@ -962,7 +1155,14 @@ function topbar(){
   return `<header class="topbar">
     <span class="wordmark">HAGGERT<span>Y</span></span>
     <nav class="tabs">
-      ${PAGES.map(([k,l])=>`<button class="tab ${S.page===k?'on':''}" data-page="${k}">${l}</button>`).join('')}
+      ${PAGES.map(([k,l])=>{
+        /* A count on the tab is what makes a pending item hard to walk
+           past. Only shown once approvals have loaded, so it never
+           flashes a wrong number on the way in. */
+        const n = (k==='approvals' && S.loaded.approvals) ? apvPendingCount() : 0;
+        return `<button class="tab ${S.page===k?'on':''}" data-page="${k}">${l}${
+          n?` <span class="badge">${n}</span>`:''}</button>`;
+      }).join('')}
     </nav>
     <div class="crmbox">
       <input type="search" id="crmQ" value="${esc(S.crmQ)}" autocomplete="off"
@@ -1012,6 +1212,7 @@ function render(){
   if(S.page==='today')    inner = pageToday();
   if(S.page==='calendar') inner = pageCalendar();
   if(S.page==='kpis')     inner = pageKpis();
+  if(S.page==='approvals') inner = pageApprovals();
   if(OWNERS[S.page])      inner = pageDay(OWNERS[S.page]);
   if(S.page==='leads')    inner = pageLeads();
   app.innerHTML = topbar() + crmPanel() + inner;
@@ -1073,6 +1274,7 @@ function wirePage(){
   if(kc) kc.addEventListener('click', ()=>{ S.kpiEdit=false; S.kpiErr=''; render(); });
   const ks = document.getElementById('kpiSave');
   if(ks) ks.addEventListener('click', saveKpiTargets);
+  wireApprovals();
   wireBoard();
   wireLeads();
 }
@@ -1534,6 +1736,262 @@ function evRow(e){
     <span class="s">${esc(e.subject||'')}${who}</span>
     <span class="kind ${esc(e.event_type)}">${esc(KIND[e.event_type]||e.event_type)}</span>
   </div>`;
+}
+
+/* ================= approvals page ================= */
+
+const APV_KINDS = { design:'Design', campaign:'Advertising campaign',
+                    approach:'Project approach', copy:'Copy', other:'Other' };
+
+function apvFileBlock(a){
+  const url = a.file_path ? S.apvUrls[a.file_path] : null;
+  const bits = [];
+  if(a.file_name){
+    const isImg = /^image\//.test(a.file_type||'') || /\.(png|jpe?g|gif|webp|svg)$/i.test(a.file_name);
+    if(url && isImg){
+      bits.push(`<img class="apv-thumb" src="${esc(url)}" alt="${esc(a.file_name)}" />`);
+    }
+    bits.push(`<div class="apv-file">
+      ${url ? `<a class="chip" href="${esc(url)}" target="_blank" rel="noopener">Open ${esc(a.file_name)}</a>`
+            : `<span class="chip">${esc(a.file_name)}</span>`}
+      ${(url && !isImg) ? `<span class="hint">Opens in a new tab. The link expires after an hour, so reopen the page if it stops working.</span>` : ''}
+    </div>`);
+  }
+  if(a.link_url){
+    bits.push(`<div class="apv-file"><a class="chip" href="${esc(a.link_url)}"
+      target="_blank" rel="noopener">Open the link</a></div>`);
+  }
+  return bits.join('');
+}
+
+function approvalCard(a){
+  const busy = S.apvBusy === a.id;
+  const chain = apvChain(a);
+  const prev = chain[0] || null;
+  const showHist = !!S.apvHist[a.id];
+
+  const badge = a.status === 'approved' ? `<span class="ebadge" style="border-color:var(--green);color:var(--green)">Approved</span>`
+    : a.status === 'changes' ? `<span class="ebadge soon">Changes asked for</span>`
+    : a.status === 'declined' ? `<span class="ebadge" style="border-color:var(--red);color:var(--red)">Declined</span>`
+    : `<span class="ebadge">Waiting</span>`;
+
+  const facts = [];
+  if(Number(a.version) > 1) facts.push('Version ' + a.version);
+  if(a.due_by)       facts.push('Needed by ' + esc(fmtDay(a.due_by + 'T12:00:00')));
+  if(a.requested_by) facts.push(esc(a.requested_by));
+  if(a.decided_at)   facts.push('Decided ' + esc(shortDate(a.decided_at)));
+
+  /* Only the two most recent rounds sit in the card. Once a third
+     version exists the second is the baseline, and comparing against
+     the original stops being the useful comparison. Older rounds are
+     kept and shown behind the toggle rather than deleted, because the
+     point of versioning is the record of what changed and why. */
+  const older = chain.slice(1);
+
+  return `<article class="apv ${esc(a.status)} ${busy?'busy':''}">
+    <div class="apv-head">
+      <div>
+        <h4>${esc(a.title)}</h4>
+        <div class="apv-kind">${esc(APV_KINDS[a.kind] || a.kind)}</div>
+      </div>
+      ${badge}
+    </div>
+
+    ${facts.length?`<div class="inv-facts">${facts.join(' &middot; ')}</div>`:''}
+    ${a.description?`<p class="apv-desc">${esc(a.description)}</p>`:''}
+
+    ${prev && prev.feedback ? `<div class="apv-prev">
+      <span class="eyebrow">What Pat asked for on version ${esc(prev.version)}</span>
+      <p>${esc(prev.feedback)}</p></div>` : ''}
+
+    ${a.change_note ? `<div class="apv-mine">
+      <span class="eyebrow">What changed</span>
+      <p>${esc(a.change_note)}</p></div>` : ''}
+
+    ${apvFileBlock(a)}
+
+    ${a.status !== 'pending' && a.feedback ? `<div class="apv-prev">
+      <span class="eyebrow">Pat's note</span>
+      <p>${esc(a.feedback)}</p></div>` : ''}
+
+    ${older.length ? `<div class="apv-hist">
+      <button class="linkbtn" data-apv-hist="${a.id}" style="padding-left:0">${
+        showHist ? 'Hide earlier versions' : `Earlier versions (${older.length})`}</button>
+      ${showHist ? older.map(v=>`<div class="ver">
+        <b>Version ${esc(v.version)}</b> &middot; <span class="muted">${esc(shortDate(v.created_at))}</span>
+        ${v.change_note?`<div class="hint">Changed: ${esc(v.change_note)}</div>`:''}
+        ${v.feedback?`<div class="hint">Pat: ${esc(v.feedback)}</div>`:''}
+        ${v.file_path && S.apvUrls[v.file_path]
+          ? `<a class="chip" href="${esc(S.apvUrls[v.file_path])}" target="_blank" rel="noopener">${esc(v.file_name||'File')}</a>`
+          : (v.file_name?`<span class="chip">${esc(v.file_name)}</span>`:'')}
+      </div>`).join('') : ''}
+    </div>` : ''}
+
+    <div class="apv-foot">
+      <div class="apv-acts">
+        ${a.status === 'pending' ? `
+          <button class="btn small" data-apv-do="${a.id}" data-val="approved" ${busy?'disabled':''}>Approve</button>
+          <button class="btn small ghost" data-apv-do="${a.id}" data-val="changes" ${busy?'disabled':''}>Request changes</button>
+          <button class="btn small ghost" data-apv-do="${a.id}" data-val="declined" ${busy?'disabled':''}>Decline</button>`
+        : a.status === 'changes' ? `
+          <button class="btn small accent" data-apv-reply="${a.id}" ${busy?'disabled':''}>Upload a new version</button>
+          <button class="btn small ghost" data-apv-do="${a.id}" data-val="pending" ${busy?'disabled':''}>Reopen</button>`
+        : `<button class="btn small ghost" data-apv-do="${a.id}" data-val="pending" ${busy?'disabled':''}>Reopen</button>`}
+      </div>
+      ${a.decided_by?`<span class="inv-box">${esc(a.decided_by)}</span>`:''}
+    </div>
+  </article>`;
+}
+
+function approvalForm(){
+  if(!S.apvOpen && !S.apvReplyTo) return '';
+  const parent = S.apvReplyTo
+    ? (S.approvals||[]).find(a => a.id === S.apvReplyTo) : null;
+  const f = S.apvForm;
+
+  return `<div class="sheet" role="dialog" aria-modal="true" aria-label="Send for approval">
+    <div class="sheet-in">
+      <div class="sheet-head">
+        <h2>${parent ? 'New version' : 'Send for approval'}</h2>
+        <button class="linkbtn" id="apvClose">Close</button>
+      </div>
+
+      ${parent ? `
+        <p class="hint" style="margin-top:10px"><b>${esc(parent.title)}</b>, version ${
+          Number(parent.version||1) + 1}</p>
+        ${parent.feedback ? `<div class="apv-prev" style="margin-top:12px">
+          <span class="eyebrow">What Pat asked for</span>
+          <p>${esc(parent.feedback)}</p></div>` : ''}
+        <div class="field"><label for="apvReply">What you changed</label>
+          <textarea id="apvReply" style="min-height:110px"
+            placeholder="Moved the logo, swapped the hero photo, cut the third paragraph">${esc(S.apvReply)}</textarea></div>
+        <p class="hint">This sits directly under his note on the new version, so he can check the changes against what he asked for.</p>
+      ` : `
+        <div class="field"><label for="apvTitle">What is it</label>
+          <input type="text" id="apvTitle" value="${esc(f.title)}"
+                 placeholder="Q4 healthcare campaign, first draft" autocomplete="off" /></div>
+
+        <div class="field"><label for="apvKind">Kind</label>
+          <select id="apvKind">${Object.entries(APV_KINDS).map(([k,l])=>
+            `<option value="${k}" ${f.kind===k?'selected':''}>${l}</option>`).join('')}</select></div>
+
+        <div class="field"><label for="apvDesc">Anything he should know</label>
+          <textarea id="apvDesc" style="min-height:90px"
+            placeholder="Optional. What to look at, what you are unsure about.">${esc(f.description)}</textarea></div>
+
+        <div class="field"><label for="apvDue">Needed by</label>
+          <input type="date" id="apvDue" value="${esc(f.due_by)}" /></div>
+      `}
+
+      <div class="field"><label for="apvFile">File</label>
+        <input type="file" id="apvFile"
+               style="width:100%;font-size:13px;padding:8px 0;border:0;background:none" /></div>
+      ${S.apvFile?`<p class="hint"><b>${esc(S.apvFile.name)}</b> &middot; ${
+        Math.round(S.apvFile.size/1024).toLocaleString()} KB</p>`:''}
+
+      <div class="field"><label for="apvLink">Or a link</label>
+        <input type="text" id="apvLink" value="${esc(f.link_url)}"
+               placeholder="SharePoint, for anything too big to upload" autocomplete="off" /></div>
+
+      ${S.apvErr?`<p class="hint err">${esc(S.apvErr)}</p>`:''}
+
+      <div class="sheet-foot">
+        <button class="btn" id="apvSave" ${S.apvSaving?'disabled':''}>${
+          S.apvSaving?'Uploading&hellip;':'Send to Pat'}</button>
+        <p class="hint" style="margin-top:8px">Files go to private storage, so only signed-in people can open them.
+          Anything over 50MB should go in SharePoint with the link above instead.</p>
+      </div>
+    </div>
+  </div>`;
+}
+
+function pageApprovals(){
+  if(!S.loaded.approvals) return loading();
+  const cur = apvCurrent();
+  const sets = {
+    pending:  cur.filter(a => a.status === 'pending'),
+    changes:  cur.filter(a => a.status === 'changes'),
+    approved: cur.filter(a => a.status === 'approved'),
+    all:      cur
+  };
+  const rows = sets[S.apvFilter] || sets.pending;
+
+  const chips = [
+    ['pending','Waiting on Pat', sets.pending.length],
+    ['changes','Changes asked for', sets.changes.length],
+    ['approved','Approved', sets.approved.length],
+    ['all','Everything', sets.all.length]
+  ].map(([k,label,n])=>
+    `<button class="fchip ${S.apvFilter===k?'on':''}" data-apvfilt="${k}">${label} <b>${n}</b></button>`).join('');
+
+  return `<main class="page" style="max-width:940px">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+      <div class="fchips" style="margin:0;flex:1">${chips}</div>
+      <button class="btn small" id="apvNew">Send something for approval</button>
+    </div>
+
+    ${S.apvNote?`<div class="done-banner" style="margin-bottom:14px"><p style="margin:0">${esc(S.apvNote)}</p></div>`:''}
+    ${S.apvErr && !S.apvOpen && !S.apvReplyTo?`<p class="hint err" style="margin-bottom:14px">${esc(S.apvErr)}</p>`:''}
+
+    ${rows.length
+      ? rows.map(approvalCard).join('')
+      : `<div class="empty" style="padding:40px 0">
+           <h2>Nothing here</h2>
+           <p>${S.apvFilter==='pending'
+                ? 'Nothing is waiting on Pat right now.'
+                : 'Nothing in this list yet.'}</p>
+         </div>`}
+  </main>${approvalForm()}`;
+}
+
+function wireApprovals(){
+  document.querySelectorAll('[data-apvfilt]').forEach(el=>
+    el.addEventListener('click',()=>{ S.apvFilter = el.dataset.apvfilt; S.apvNote=''; render(); }));
+
+  document.querySelectorAll('[data-apv-do]').forEach(el=>
+    el.addEventListener('click',()=>decideApproval(el.dataset.apvDo, el.dataset.val)));
+
+  document.querySelectorAll('[data-apv-hist]').forEach(el=>
+    el.addEventListener('click',()=>{
+      const id = el.dataset.apvHist;
+      S.apvHist[id] = !S.apvHist[id]; render();
+    }));
+
+  document.querySelectorAll('[data-apv-reply]').forEach(el=>
+    el.addEventListener('click',()=>{
+      S.apvReplyTo = el.dataset.apvReply; S.apvReply=''; S.apvFile=null;
+      S.apvErr=''; S.apvForm.link_url=''; render();
+    }));
+
+  const nw = document.getElementById('apvNew');
+  if(nw) nw.addEventListener('click',()=>{
+    S.apvOpen = true; S.apvErr=''; S.apvNote=''; S.apvFile=null; render();
+  });
+
+  const cl = document.getElementById('apvClose');
+  if(cl) cl.addEventListener('click',()=>{
+    S.apvOpen=false; S.apvReplyTo=null; S.apvErr=''; render();
+  });
+
+  /* Mirrored into state on input, because render() rebuilds the DOM and
+     an unbound field loses whatever was half-typed. */
+  [['apvTitle','title'],['apvDesc','description'],
+   ['apvLink','link_url'],['apvDue','due_by']].forEach(([id,key])=>{
+    const el = document.getElementById(id);
+    if(el) el.addEventListener('input',()=>{ S.apvForm[key] = el.value; });
+  });
+  const kd = document.getElementById('apvKind');
+  if(kd) kd.addEventListener('change',()=>{ S.apvForm.kind = kd.value; });
+  const rp = document.getElementById('apvReply');
+  if(rp) rp.addEventListener('input',()=>{ S.apvReply = rp.value; });
+
+  const fl = document.getElementById('apvFile');
+  if(fl) fl.addEventListener('change',()=>{
+    S.apvFile = (fl.files && fl.files[0]) || null; S.apvErr=''; render();
+  });
+
+  const sv = document.getElementById('apvSave');
+  if(sv) sv.addEventListener('click', submitApproval);
 }
 
 /* ================= pipeline and kpis ================= */
