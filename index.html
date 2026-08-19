@@ -493,13 +493,22 @@ const KIND = { meeting:'Meeting', networking:'Event', site_visit:'Site visit',
 
 const PAGES = [
   ['today','Outreach'], ['calendar',"Pat's Calendar"],
-  ['kpis','Pipeline & KPIs'], ['myday',"Liam's Day"], ['leads','Leads']
+  ['kpis','Pipeline & KPIs'], ['myday',"Liam's Day"],
+  ['iyanna',"Iyanna's Day"], ['leads','Leads']
 ];
+
+/* Which tab belongs to whom. tasks.owner already existed and every row
+   written before this was 'liam', so no backfill is needed. */
+const OWNERS = { myday:'liam', iyanna:'iyanna' };
+const WHOAMI = { 'liam@haggertybuilds.com':'liam',
+                 'iyanna@haggertybuilds.com':'iyanna' };
 
 const S = {
   page:'today', board:[], drafts:{}, activeId:null, open:{},
   busy:false, err:'', gen:'', metrics:null, week:null, tiles:null, goldOnly:false, goldPool:0,
-  tasks:null, dayStatus:null, seq:null, loaded:{},
+  /* Two people now have lists, so tasks is keyed by owner rather than
+     being one array. loaded.tasks follows the same shape. */
+  tasks:{}, seq:null, loaded:{ tasks:{} }, me:'liam', dayOwner:'liam',
   /* leads */
   batches:null, leads:null, verticals:[], batchId:'all', leadFilter:'all',
   picked:new Set(), leadOpen:{}, leadNote:'', leadErr:'', leadProg:null,
@@ -680,15 +689,42 @@ async function loadSequences(){
   S.loaded.seq = true;
 }
 
-async function loadTasks(){
-  const [t, st] = await Promise.all([
-    sb.from('tasks').select('*').eq('work_date', today())
-      .order('status').order('priority').order('sort_order'),
-    sb.from('v_day_status').select('*').eq('work_date', today())
-  ]);
-  S.tasks = t.data || [];
-  S.dayStatus = (st.data && st.data[0]) || null;
-  S.loaded.tasks = true;
+/* Today's tasks plus anything older still open. Rollover happens on read
+   rather than in a nightly job: nothing extra has to run, no executions
+   are spent, and a gap of several days heals itself. The empty state has
+   claimed this behaviour since the tab was built, but the old query
+   filtered on work_date alone, so unfinished work silently disappeared
+   at midnight.
+
+   v_day_status is no longer read. It was scoped to a single work_date,
+   which cannot describe a list that spans days, and counting the rows
+   already in hand means the Outreach panel and this page can never
+   disagree. */
+async function loadTasks(owner){
+  const t0 = today();
+  const { data, error } = await sb.from('tasks').select('*')
+    .eq('owner', owner)
+    .or(`work_date.eq.${t0},and(work_date.lt.${t0},status.neq.done)`)
+    .order('status').order('work_date').order('priority').order('sort_order');
+  if(error) throw error;
+  S.tasks[owner] = data || [];
+  S.loaded.tasks[owner] = true;
+}
+
+function dayStats(owner){
+  const rows = S.tasks[owner] || [];
+  if(!rows.length) return null;
+  const t0 = today();
+  const done  = rows.filter(t=>t.status==='done').length;
+  const doing = rows.filter(t=>t.status==='doing').length;
+  const open  = rows.filter(t=>t.status==='open').length;
+  const carried = rows.filter(t=>t.work_date < t0 && t.status!=='done').length;
+  const focus = rows.find(t=>t.status==='doing');
+  const areas = [...new Set(rows.filter(t=>t.status!=='done').map(t=>t.category))];
+  return { total:rows.length, done, doing, open, carried,
+           pct_done: rows.length ? Math.round(100*done/rows.length) : null,
+           current_focus: focus ? focus.title : null,
+           open_areas: areas.join(', ') };
 }
 
 async function loadKpis(){
@@ -901,7 +937,7 @@ async function ensure(page){
     if(!S.loaded.board) await loadBoard();
     if(!S.loaded.tiles) await loadTiles();
     if(!S.loaded.week) await loadWeek();
-    if(!S.loaded.tasks) await loadTasks();
+    if(!S.loaded.tasks[S.me]) await loadTasks(S.me);
     if(!S.loaded.seq) await loadSequences();
   }
   if(page==='calendar' && !S.loaded.week) await loadWeek();
@@ -910,7 +946,7 @@ async function ensure(page){
     if(!S.loaded.kpis) await loadKpis();
     if(!S.loaded.metrics) await loadMetrics();
   }
-  if(page==='myday' && !S.loaded.tasks) await loadTasks();
+  if(OWNERS[page] && !S.loaded.tasks[OWNERS[page]]) await loadTasks(OWNERS[page]);
   if(page==='leads'){
     if(!S.loaded.verticals) await loadVerticals();
     if(!S.loaded.labels) await loadLabels();
@@ -976,7 +1012,7 @@ function render(){
   if(S.page==='today')    inner = pageToday();
   if(S.page==='calendar') inner = pageCalendar();
   if(S.page==='kpis')     inner = pageKpis();
-  if(S.page==='myday')    inner = pageMyDay();
+  if(OWNERS[S.page])      inner = pageDay(OWNERS[S.page]);
   if(S.page==='leads')    inner = pageLeads();
   app.innerHTML = topbar() + crmPanel() + inner;
   wireChrome();
@@ -1045,7 +1081,7 @@ function wirePage(){
 function pageToday(){
   if(!S.loaded.board) return loading();
   const todayEvents = (S.week||[]).filter(e => dayKey(e.starts_at)===dayKey(new Date().toISOString()));
-  const ds = S.dayStatus;
+  const ds = dayStats(S.me);
 
   const side = `
     <div class="block">
@@ -2109,11 +2145,16 @@ async function saveKpiTargets(){
   finally{ S.kpiBusy=false; render(); }
 }
 
-/* ================= my day ================= */
-function pageMyDay(){
-  if(!S.loaded.tasks) return loading();
-  const ts = S.tasks || [];
-  const ds = S.dayStatus;
+/* ================= day pages ================= */
+/* One function serves both tabs. The owner comes from OWNERS, and
+   dayOwner is set here so the add, cycle and delete handlers write to
+   the list actually on screen rather than always to Liam's. */
+function pageDay(owner){
+  if(!S.loaded.tasks[owner]) return loading();
+  S.dayOwner = owner;
+  const ts = S.tasks[owner] || [];
+  const ds = dayStats(owner);
+  const name = owner === 'liam' ? 'Liam' : 'Iyanna';
   const CATS = ['outreach','content','systems','admin','events','other'];
 
   return `<main class="page" style="max-width:820px">
@@ -2121,8 +2162,12 @@ function pageMyDay(){
       <div class="stat"><div class="k">Done</div><div class="v">${num(ds.done)}<small> / ${num(ds.total)}</small></div></div>
       <div class="stat accent"><div class="k">In progress</div><div class="v">${num(ds.doing)}</div></div>
       <div class="stat"><div class="k">Open</div><div class="v">${num(ds.open)}</div></div>
-      <div class="stat"><div class="k">Complete</div><div class="v">${ds.pct_done!=null?ds.pct_done+'<small>%</small>':'&ndash;'}</div></div>
+      <div class="stat ${ds.carried?'accent':''}"><div class="k">Carried over</div><div class="v">${num(ds.carried)}</div></div>
     </div>`:''}
+
+    ${ds && ds.carried ? `<div class="warn soft" style="margin-bottom:18px">
+      <b>${ds.carried} ${ds.carried===1?'task has':'tasks have'} carried over.</b>
+      Still open from an earlier day, so ${ds.carried===1?'it sits':'they sit'} at the top of the list below.</div>` : ''}
 
     <div class="block">
       <h2 class="sec">Add a task</h2>
@@ -2142,14 +2187,20 @@ function pageMyDay(){
     </div>
 
     <div class="block">
-      <h2 class="sec">Today</h2>
-      ${ts.length ? ts.map(taskHtml).join('') : `<p class="hint">Nothing yet. Anything left open at the end of the day rolls to tomorrow.</p>`}
+      <h2 class="sec">${esc(name)} &middot; ${esc(prettyDate())}</h2>
+      ${ts.length ? ts.map(taskHtml).join('') : `<p class="hint">Nothing yet. Anything left open carries forward to the next day rather than disappearing.</p>`}
     </div>
   </main>`;
 }
 
 function taskHtml(t){
   const cls = t.status==='done' ? 'done' : (t.status==='doing' ? 'doing' : '');
+  /* Age is the useful signal on a carried task. A thing sitting for six
+     days is a different problem from a thing sitting since yesterday. */
+  const carried = t.work_date < today() && t.status !== 'done';
+  const days = carried
+    ? Math.max(1, Math.round((new Date(today()) - new Date(t.work_date)) / 86400000))
+    : 0;
   return `<div class="task ${cls}">
     <button class="box" data-task-toggle="${t.id}" title="Click to advance">${t.status==='done'?'&#10003;':''}</button>
     <span class="mid">
@@ -2158,6 +2209,7 @@ function taskHtml(t){
         ${esc(t.category)}
         ${t.priority==1?' &middot; <span class="pri1">high</span>':''}
         ${t.status==='doing'?' &middot; in progress':''}
+        ${carried?` &middot; <span style="color:var(--orange)">carried ${days}d</span>`:''}
       </span>
     </span>
     <button class="linkbtn" data-task-del="${t.id}">remove</button>
@@ -3181,16 +3233,17 @@ async function addTask(){
 
   const category = S.taskDraft.category;
   const priority = Number(S.taskDraft.priority);
+  const owner = S.dayOwner || S.me;
   S.err='';
   try{
     const { error } = await sb.from('tasks').insert({
-      title, category, priority, owner:'liam',
-      work_date: today(), sort_order: (S.tasks||[]).length
+      title, category, priority, owner,
+      work_date: today(), sort_order: (S.tasks[owner]||[]).length
     });
     if(error) throw error;
     // Clear the text but keep area and priority: tasks come in runs.
     S.taskDraft.title = '';
-    await loadTasks();
+    await loadTasks(owner);
     S.taskFocus = true; render(); S.taskFocus = false;
   }catch(err){
     // The typed text survives the error, so nothing has to be retyped.
@@ -3200,19 +3253,25 @@ async function addTask(){
 }
 
 async function cycleTask(id){
-  const t = (S.tasks||[]).find(x=>x.id===id);
+  const owner = S.dayOwner || S.me;
+  const t = (S.tasks[owner]||[]).find(x=>x.id===id);
   if(!t) return;
   const next = t.status==='open' ? 'doing' : (t.status==='doing' ? 'done' : 'open');
   try{
-    await sb.from('tasks').update({ status: next }).eq('id', id);
-    await loadTasks(); render();
+    /* work_date moves to today whenever the status changes. Without it a
+       carried task marked done keeps its old date, which satisfies
+       neither half of the rollover query, and it disappears from the
+       screen the instant it is ticked. */
+    await sb.from('tasks').update({ status: next, work_date: today() }).eq('id', id);
+    await loadTasks(owner); render();
   }catch(err){ S.err = err.message||String(err); render(); }
 }
 
 async function delTask(id){
+  const owner = S.dayOwner || S.me;
   try{
     await sb.from('tasks').delete().eq('id', id);
-    await loadTasks(); render();
+    await loadTasks(owner); render();
   }catch(err){ S.err = err.message||String(err); render(); }
 }
 
@@ -3270,6 +3329,10 @@ function exportCsv(){
 async function boot(){
   const { data:{ session } } = await sb.auth.getSession();
   if(!session) return renderLogin();
+  /* Falls back to liam for an unrecognised address, which keeps an
+     unknown account looking at a list rather than at an error. */
+  S.me = WHOAMI[(session.user && session.user.email || '').toLowerCase()] || 'liam';
+  S.dayOwner = S.me;
   try{
     await ensure('today');
     render();
