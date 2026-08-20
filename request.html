@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Marketing request</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#1C1B1A; --paper:#FAF9F7; --card:#FFFFFF;
+    --rule:#DFDBD4; --rule-soft:#EDEAE5; --wash:#F6F4F1;
+    --grey:#4D4D4D; --slate:#6E7477;
+    --orange:#F68922; --orange-tint:#FEF3E7;
+    --green:#3F7D5C; --red:#A6402C;
+    --display:"Barlow Condensed",system-ui,sans-serif;
+    --body:"IBM Plex Sans",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{background:var(--paper);color:var(--ink);font-family:var(--body);
+       font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased;
+       padding-bottom:env(safe-area-inset-bottom)}
+
+  .top{background:var(--card);border-bottom:1px solid var(--rule);
+       padding:16px 20px;position:sticky;top:0;z-index:10}
+  .wordmark{font-family:var(--display);font-weight:700;font-size:21px;
+            letter-spacing:.14em;text-transform:uppercase}
+  .wordmark span{color:var(--orange)}
+  .sub{font-family:var(--display);text-transform:uppercase;letter-spacing:.09em;
+       font-weight:600;font-size:13px;color:var(--slate);display:block;margin-top:2px}
+
+  .wrap{max-width:620px;margin:0 auto;padding:20px 18px 60px}
+
+  .field{margin-bottom:18px}
+  .field label{display:block;font-family:var(--display);text-transform:uppercase;
+               letter-spacing:.08em;font-size:13px;color:var(--slate);
+               font-weight:600;margin-bottom:6px}
+  .field .req{color:var(--orange)}
+  /* 16px minimum, or iOS zooms the whole page on focus and the person
+     loses their place in the form. */
+  input[type=text],input[type=email],input[type=date],textarea,select{
+    width:100%;font-family:var(--body);font-size:16px;line-height:1.5;
+    color:var(--ink);background:var(--card);border:1px solid var(--rule);
+    border-radius:0;padding:13px 12px;-webkit-appearance:none;appearance:none}
+  select{background-image:linear-gradient(45deg,transparent 50%,var(--slate) 50%),
+         linear-gradient(135deg,var(--slate) 50%,transparent 50%);
+         background-position:calc(100% - 19px) 21px,calc(100% - 13px) 21px;
+         background-size:6px 6px,6px 6px;background-repeat:no-repeat}
+  input:focus,textarea:focus,select:focus{outline:2px solid var(--orange);outline-offset:-1px}
+  textarea{min-height:130px;resize:vertical}
+  .hint{font-size:13px;color:var(--slate);margin:6px 0 0}
+  .hint.err{color:var(--red)}
+
+  /* Big tap targets. This gets filled in one-handed on a jobsite. */
+  .pick{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .pick.three{grid-template-columns:1fr 1fr 1fr}
+  .opt{font-family:var(--body);font-size:15px;background:var(--card);
+       border:1px solid var(--rule);color:var(--grey);padding:14px 10px;
+       cursor:pointer;text-align:center;line-height:1.3}
+  .opt.on{border-color:var(--orange);background:var(--orange-tint);
+          color:var(--ink);font-weight:600}
+  .opt:active{background:var(--wash)}
+
+  .note{background:var(--card);border:1px solid var(--rule);
+        border-left:3px solid var(--orange);padding:13px 15px;margin:18px 0;
+        font-size:14px;color:var(--grey)}
+  .note b{color:#8A4A05}
+  .note.info{border-left-color:var(--slate)}
+  .note.info b{color:var(--ink)}
+
+  .files{margin-top:10px}
+  .filerow{display:flex;align-items:center;gap:10px;background:var(--card);
+           border:1px solid var(--rule);padding:9px 11px;margin-bottom:6px;font-size:14px}
+  .filerow .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .filerow .sz{color:var(--slate);font-size:12.5px;white-space:nowrap}
+  .filerow button{background:none;border:0;color:var(--red);font-size:20px;
+                  line-height:1;cursor:pointer;padding:0 4px}
+  .addfile{display:block;width:100%;background:var(--card);border:1px dashed var(--rule);
+           color:var(--grey);padding:16px;font-size:15px;font-family:var(--body);
+           cursor:pointer;text-align:center}
+  .addfile:active{background:var(--wash)}
+  input[type=file]{display:none}
+
+  .btn{font-family:var(--display);text-transform:uppercase;letter-spacing:.09em;
+       font-weight:600;font-size:17px;background:var(--ink);color:#fff;border:0;
+       padding:16px 20px;cursor:pointer;width:100%}
+  .btn:active{background:#000}
+  .btn[disabled]{opacity:.45}
+
+  .done{background:var(--card);border:1px solid var(--rule);
+        border-left:3px solid var(--green);padding:22px 20px}
+  .done h2{font-family:var(--display);font-size:26px;margin:0 0 8px;font-weight:700}
+  .done p{margin:0 0 10px;color:var(--grey);font-size:15px}
+  .done .btn{margin-top:12px;background:none;color:var(--grey);border:1px solid var(--rule)}
+
+  .prog{height:4px;background:var(--rule-soft);margin-top:12px}
+  .prog i{display:block;height:100%;background:var(--orange);transition:width .2s ease}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <span class="wordmark" id="mark">HAGGERT<span>Y</span></span>
+  <span class="sub">Marketing request</span>
+</header>
+
+<div class="wrap" id="app"></div>
+
+<script type="module">
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+const SUPABASE_URL = 'https://ekatzukprjpisdiwubjq.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_bdyRB7Mx0BKzNj1EcYlRCg_8JLDXEIL';
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+const app = document.getElementById('app');
+
+/* Screenshots off a phone are large. 25MB matches the bucket limit, and
+   catching it here means a clear message rather than a storage error
+   after the person has already filled the form in. */
+const MAX_MB = 25;
+
+const TYPES = [
+  ['post',  'Post something'],
+  ['edit',  'Edit something'],
+  ['make',  'Make something new'],
+  ['order', 'Order something'],
+  ['other', 'Something else']
+];
+
+const CHANNELS = {
+  haggerty: [
+    ['website','Website'], ['instagram','Instagram'], ['linkedin','LinkedIn'],
+    ['gbp','Google Business'], ['facebook','Facebook'],
+    ['print','Print or signage'], ['other','Other']
+  ],
+  rhino: [
+    ['website','Website'], ['instagram','Instagram'], ['linkedin','LinkedIn'],
+    ['gbp','Google Business'], ['facebook','Facebook'],
+    ['print','Print or signage'], ['other','Other']
+  ]
+};
+
+const F = {
+  brand:'haggerty', name:'', email:'', type:'', channel:'',
+  title:'', details:'', needed_by:'', files:[],
+  busy:false, err:'', done:false, prog:0, ref:''
+};
+
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+  .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+/* Mirrors request_target_week() in Postgres. Monday to Thursday targets
+   next week, Friday to Sunday the week after. Shown so the cutoff is a
+   date the person can act on rather than a rule they have to work out. */
+function targetWeek(){
+  const now = new Date();
+  const dow = now.getDay() === 0 ? 7 : now.getDay();   // ISO, Monday = 1
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - (dow - 1));
+  monday.setDate(monday.getDate() + (dow <= 4 ? 7 : 14));
+  return monday;
+}
+function fmtWeek(d){
+  const end = new Date(d); end.setDate(d.getDate() + 4);
+  const a = d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  const b = end.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  return a + ' to ' + b;
+}
+function pastCutoff(){
+  const dow = new Date().getDay() === 0 ? 7 : new Date().getDay();
+  return dow > 4;
+}
+
+function pickRow(key, opts, cls){
+  return `<div class="pick ${cls||''}">${opts.map(([v,l])=>
+    `<button type="button" class="opt ${F[key]===v?'on':''}" data-set="${key}" data-val="${v}">${l}</button>`
+  ).join('')}</div>`;
+}
+
+function render(){
+  document.getElementById('mark').innerHTML = F.brand === 'rhino'
+    ? 'RHINO <span>RESTORES</span>' : 'HAGGERT<span>Y</span>';
+
+  if(F.done){
+    app.innerHTML = `<div class="done">
+      <h2>Got it</h2>
+      <p>Your request is in the queue${F.ref?` as <b>${esc(F.ref)}</b>`:''}.</p>
+      <p>It is aimed at the week of <b>${esc(fmtWeek(targetWeek()))}</b>. If anything is
+         unclear I will email you at ${esc(F.email)} rather than guess.</p>
+      <button class="btn" id="again">Send another request</button>
+    </div>`;
+    document.getElementById('again').addEventListener('click',()=>{
+      Object.assign(F,{ type:'', channel:'', title:'', details:'',
+                        needed_by:'', files:[], done:false, err:'', ref:'' });
+      render(); window.scrollTo(0,0);
+    });
+    return;
+  }
+
+  const chans = CHANNELS[F.brand] || CHANNELS.haggerty;
+
+  app.innerHTML = `
+    <div class="field">
+      <label>Which company <span class="req">*</span></label>
+      ${pickRow('brand', [['haggerty','HAGGERTY'],['rhino','RHINO Restores']])}
+    </div>
+
+    <div class="field">
+      <label for="nm">Your name <span class="req">*</span></label>
+      <input type="text" id="nm" value="${esc(F.name)}" autocomplete="name"
+             placeholder="Dana Whitfield" />
+    </div>
+
+    <div class="field">
+      <label for="em">Your email <span class="req">*</span></label>
+      <input type="email" id="em" value="${esc(F.email)}" autocomplete="email"
+             inputmode="email" placeholder="dana@haggertybuilds.com" />
+      <p class="hint">So I can come back to you with questions.</p>
+    </div>
+
+    <div class="field">
+      <label>What do you need <span class="req">*</span></label>
+      ${pickRow('type', TYPES)}
+    </div>
+
+    ${F.type === 'edit' ? `<div class="note">
+      <b>Please attach a screenshot of what needs changing.</b>
+      Mark it up if you can. A picture of the thing beats a description of
+      where it is, and it means I fix the right thing the first time.
+    </div>` : ''}
+
+    <div class="field">
+      <label>Where is it <span class="req">*</span></label>
+      ${pickRow('channel', chans, 'three')}
+    </div>
+
+    <div class="field">
+      <label for="ti">In one line <span class="req">*</span></label>
+      <input type="text" id="ti" value="${esc(F.title)}"
+             placeholder="New photos on the Industrial page" />
+    </div>
+
+    <div class="field">
+      <label for="de">Tell me more</label>
+      <textarea id="de" placeholder="What you want, and anything I should know. If it is going out publicly, say what it should say.">${esc(F.details)}</textarea>
+    </div>
+
+    <div class="field">
+      <label for="nb">Needed by</label>
+      <input type="date" id="nb" value="${esc(F.needed_by)}" />
+      <p class="hint">Leave it blank if there is no hard date.</p>
+    </div>
+
+    <div class="field">
+      <label>Photos or screenshots</label>
+      <input type="file" id="fi" accept="image/*,application/pdf" multiple capture="environment" />
+      <button type="button" class="addfile" id="addf">Take a photo or choose files</button>
+      ${F.files.length?`<div class="files">${F.files.map((f,i)=>`
+        <div class="filerow">
+          <span class="nm">${esc(f.name)}</span>
+          <span class="sz">${Math.round(f.size/1024).toLocaleString()} KB</span>
+          <button type="button" data-rm="${i}" aria-label="Remove">&times;</button>
+        </div>`).join('')}</div>`:''}
+    </div>
+
+    <div class="note ${pastCutoff()?'':'info'}">
+      ${pastCutoff()
+        ? `<b>This is past Thursday.</b> Requests in by Thursday are planned for the
+           following week, so this one is aimed at the week of
+           <b>${esc(fmtWeek(targetWeek()))}</b> and may move depending on what is
+           already booked. If it is urgent, put a date above and say so.`
+        : `<b>Aimed at the week of ${esc(fmtWeek(targetWeek()))}.</b>
+           Anything in by Thursday goes into the following week's plan.`}
+    </div>
+
+    ${F.err?`<p class="hint err" style="margin-bottom:14px">${esc(F.err)}</p>`:''}
+
+    <button class="btn" id="go" ${F.busy?'disabled':''}>${
+      F.busy?'Sending&hellip;':'Send request'}</button>
+    ${F.busy&&F.files.length?`<div class="prog"><i style="width:${F.prog}%"></i></div>`:''}
+  `;
+
+  document.querySelectorAll('[data-set]').forEach(el=>
+    el.addEventListener('click',()=>{
+      const k = el.dataset.set;
+      F[k] = el.dataset.val;
+      if(k === 'brand') F.channel = '';
+      F.err=''; render();
+    }));
+
+  const bind = (id,key,ev='input')=>{
+    const el = document.getElementById(id);
+    if(el) el.addEventListener(ev,()=>{ F[key] = el.value; });
+  };
+  bind('nm','name'); bind('em','email'); bind('ti','title');
+  bind('de','details'); bind('nb','needed_by','change');
+
+  const fi = document.getElementById('fi');
+  document.getElementById('addf').addEventListener('click',()=>fi.click());
+  fi.addEventListener('change',()=>{
+    for(const f of Array.from(fi.files||[])){
+      if(f.size > MAX_MB*1024*1024){
+        F.err = `${f.name} is over ${MAX_MB}MB. Send that one to me by email instead.`;
+        continue;
+      }
+      F.files.push(f);
+    }
+    fi.value = '';
+    render();
+  });
+  document.querySelectorAll('[data-rm]').forEach(el=>
+    el.addEventListener('click',()=>{ F.files.splice(Number(el.dataset.rm),1); render(); }));
+
+  document.getElementById('go').addEventListener('click', submit);
+}
+
+async function submit(){
+  if(F.busy) return;
+
+  const missing = [];
+  if(!F.name.trim())  missing.push('your name');
+  if(!F.email.trim() || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(F.email.trim()))
+                      missing.push('a valid email');
+  if(!F.type)         missing.push('what you need');
+  if(!F.channel)      missing.push('where it is');
+  if(!F.title.trim()) missing.push('a one line summary');
+  if(missing.length){
+    F.err = 'Still need ' + missing.join(', ') + '.';
+    render(); window.scrollTo(0,0); return;
+  }
+
+  F.busy = true; F.err = ''; F.prog = 0; render();
+
+  try{
+    /* The row goes in first. If a photo upload then fails, the request
+       still exists and can be chased, rather than the whole thing being
+       lost because one file was too big or the signal dropped. */
+    const { data, error } = await sb.from('requests').insert({
+      requester_name:  F.name.trim(),
+      requester_email: F.email.trim().toLowerCase(),
+      request_type:    F.type,
+      channel:         F.channel,
+      brand:           F.brand,
+      title:           F.title.trim(),
+      details:         F.details.trim() || null,
+      needed_by:       F.needed_by || null
+    }).select('id').single();
+    if(error) throw error;
+
+    const reqId = data.id;
+    F.ref = reqId.slice(0,8);
+
+    let done = 0;
+    for(const file of F.files){
+      const safe = file.name.replace(/[^A-Za-z0-9._-]/g,'_');
+      const path = `${reqId}/${Date.now().toString(36)}-${safe}`;
+      const { error:upErr } = await sb.storage.from('requests').upload(path, file);
+      if(!upErr){
+        await sb.from('request_files').insert({
+          request_id: reqId, file_path: path,
+          file_name: file.name, file_type: file.type || ''
+        });
+      }
+      done++;
+      F.prog = Math.round(100*done/F.files.length);
+      render();
+    }
+
+    F.done = true;
+  }catch(err){
+    F.err = 'That did not send: ' + (err.message || err) +
+            '. Nothing was lost, so try again in a moment.';
+  }
+  F.busy = false; render(); window.scrollTo(0,0);
+}
+
+render();
+</script>
+</body>
+</html>
