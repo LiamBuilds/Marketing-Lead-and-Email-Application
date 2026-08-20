@@ -548,6 +548,9 @@ const S = {
   apvNote:'', apvHist:{}, apvOpen:false, apvSaving:false, apvFile:null,
   apvForm:{ title:'', kind:'design', description:'', link_url:'', due_by:'' },
   apvReplyTo:null, apvReply:'',
+  /* inbound requests, shown as a section on Liam's day rather than a tab */
+  requests:null, reqUrls:{}, reqFiles:{}, reqBusy:'', reqErr:'', reqOpen:{},
+  reqShowDone:false,
   /* leads */
   batches:null, leads:null, verticals:[], batchId:'all', leadFilter:'all',
   picked:new Set(), leadOpen:{}, leadNote:'', leadErr:'', leadProg:null,
@@ -690,6 +693,77 @@ async function loadInvites(){
    to what he is now looking at, or every round is a fresh review. It also
    means his feedback reaches the next version in his own words instead of
    being summarised by the person acting on it. */
+
+/* ================= inbound requests ================= */
+/* Anyone in either company can submit through the public form. These
+   land here rather than in their own tab: it is a list that gets checked
+   alongside the day's work, not a place to visit. */
+
+async function loadRequests(){
+  const [{ data:rows, error }, { data:files }] = await Promise.all([
+    sb.from('requests').select('*').order('created_at', { ascending:false }).limit(200),
+    sb.from('request_files').select('*')
+  ]);
+  if(error) throw error;
+  S.requests = rows || [];
+
+  S.reqFiles = {};
+  for(const f of (files||[])) (S.reqFiles[f.request_id] ||= []).push(f);
+
+  S.reqUrls = {};
+  const paths = [...new Set((files||[]).map(f => f.file_path).filter(Boolean))];
+  if(paths.length){
+    try{
+      const { data:urls } = await sb.storage.from('requests').createSignedUrls(paths, 3600);
+      for(const u of (urls||[])) if(u && u.path && u.signedUrl) S.reqUrls[u.path] = u.signedUrl;
+    }catch(e){ /* card falls back to a filename with no preview */ }
+  }
+  S.loaded.requests = true;
+}
+
+/* Their own date if they gave one, otherwise the Friday of the week the
+   request was planned into. Without the fallback everything with no date
+   would read as equally urgent, which is the same as no ordering at all. */
+function reqDue(r){
+  if(r.needed_by) return new Date(r.needed_by + 'T12:00:00');
+  if(r.target_week){
+    const d = new Date(r.target_week + 'T12:00:00');
+    d.setDate(d.getDate() + 4);
+    return d;
+  }
+  return null;
+}
+
+function reqDaysLeft(r){
+  const due = reqDue(r);
+  if(!due) return null;
+  const t0 = new Date(); t0.setHours(12,0,0,0);
+  return Math.round((due - t0) / 86400000);
+}
+
+function reqOpenList(){
+  return (S.requests||[]).filter(r => r.status !== 'done' && r.status !== 'dropped')
+    .sort((a,b)=>{
+      const da = reqDaysLeft(a), db = reqDaysLeft(b);
+      if(da === null) return 1;
+      if(db === null) return -1;
+      return da - db;
+    });
+}
+
+async function setRequestStatus(id, status){
+  if(S.reqBusy) return;
+  S.reqBusy = id; S.reqErr = ''; render();
+  try{
+    const patch = { status };
+    patch.completed_at = (status === 'done') ? new Date().toISOString() : null;
+    const { error } = await sb.from('requests').update(patch).eq('id', id);
+    if(error) throw error;
+    S.loaded.requests = false;
+    await loadRequests();
+  }catch(err){ S.reqErr = err.message || String(err); }
+  S.reqBusy = ''; render();
+}
 
 async function loadApprovals(){
   const { data, error } = await sb.from('approvals').select('*')
@@ -1140,6 +1214,7 @@ async function ensure(page){
     if(!S.loaded.metrics) await loadMetrics();
   }
   if(OWNERS[page] && !S.loaded.tasks[OWNERS[page]]) await loadTasks(OWNERS[page]);
+  if(page === 'myday' && !S.loaded.requests) await loadRequests();
   if(page==='leads'){
     if(!S.loaded.verticals) await loadVerticals();
     if(!S.loaded.labels) await loadLabels();
@@ -1274,6 +1349,7 @@ function wirePage(){
   if(kc) kc.addEventListener('click', ()=>{ S.kpiEdit=false; S.kpiErr=''; render(); });
   const ks = document.getElementById('kpiSave');
   if(ks) ks.addEventListener('click', saveKpiTargets);
+  wireRequests();
   wireApprovals();
   wireBoard();
   wireLeads();
@@ -1736,6 +1812,123 @@ function evRow(e){
     <span class="s">${esc(e.subject||'')}${who}</span>
     <span class="kind ${esc(e.event_type)}">${esc(KIND[e.event_type]||e.event_type)}</span>
   </div>`;
+}
+
+/* ---------- inbound requests, on Liam's day ---------- */
+
+const REQ_TYPES = { post:'Post', edit:'Edit', make:'Make', order:'Order', other:'Other' };
+const REQ_CHANS = { website:'Website', instagram:'Instagram', linkedin:'LinkedIn',
+                    gbp:'Google Business', facebook:'Facebook',
+                    print:'Print or signage', other:'Other' };
+
+/* The countdown is the whole point of putting these here. A request with
+   no date still gets one, from the Friday of its planned week, so the
+   list sorts by what is actually closest rather than by arrival. */
+function reqCountdown(r){
+  const d = reqDaysLeft(r);
+  if(d === null) return `<span class="ebadge">No date</span>`;
+  const soft = !r.needed_by;
+  const cls = d < 0 ? 'past' : (d <= 2 ? 'soon' : '');
+  const word = d < 0 ? `${Math.abs(d)}d overdue`
+             : d === 0 ? 'Due today'
+             : d === 1 ? '1 day left'
+             : `${d} days left`;
+  return `<span class="ebadge ${cls}"${soft?' title="No date given, so this counts down to the end of the week it was planned into"':''}>${
+    word}${soft?'*':''}</span>`;
+}
+
+function requestCard(r){
+  const busy = S.reqBusy === r.id;
+  const open = !!S.reqOpen[r.id];
+  const files = S.reqFiles[r.id] || [];
+  const d = reqDaysLeft(r);
+
+  const meta = [
+    REQ_TYPES[r.request_type] || r.request_type,
+    REQ_CHANS[r.channel] || r.channel,
+    (r.brand === 'rhino' ? 'RHINO' : 'HAGGERTY')
+  ].filter(Boolean).join(' &middot; ');
+
+  return `<article class="apv ${d !== null && d < 0 ? 'changes' : ''} ${busy?'busy':''}"
+           style="margin-bottom:8px">
+    <div class="apv-head">
+      <div style="min-width:0">
+        <h4>${esc(r.title)}</h4>
+        <div class="apv-kind">${meta}</div>
+      </div>
+      ${reqCountdown(r)}
+    </div>
+
+    <div class="inv-facts">
+      ${esc(r.requester_name)}
+      ${r.needed_by?` &middot; needs it by ${esc(fmtDay(r.needed_by + 'T12:00:00'))}`:''}
+      ${files.length?` &middot; ${files.length} file${files.length===1?'':'s'}`:''}
+    </div>
+
+    ${open ? `
+      ${r.details?`<p class="apv-desc">${esc(r.details)}</p>`:''}
+      ${files.length?`<div class="apv-file">${files.map(f=>{
+        const url = S.reqUrls[f.file_path];
+        const isImg = /^image\//.test(f.file_type||'') || /\.(png|jpe?g|gif|webp)$/i.test(f.file_name||'');
+        return url && isImg
+          ? `<a href="${esc(url)}" target="_blank" rel="noopener"><img class="apv-thumb"
+               style="max-height:200px" src="${esc(url)}" alt="${esc(f.file_name||'')}" /></a>`
+          : `<a class="chip" href="${esc(url||'#')}" target="_blank" rel="noopener">${esc(f.file_name||'File')}</a>`;
+      }).join('')}</div>`:''}
+      <div class="apv-file"><a class="chip" href="mailto:${esc(r.requester_email)}?subject=${
+        encodeURIComponent('Re: ' + r.title)}">Email ${esc(r.requester_name.split(/\s+/)[0])}</a></div>
+    ` : ''}
+
+    <div class="apv-foot">
+      <div class="apv-acts">
+        ${r.status === 'done'
+          ? `<button class="btn small ghost" data-req="${r.id}" data-val="new" ${busy?'disabled':''}>Reopen</button>`
+          : `<button class="btn small" data-req="${r.id}" data-val="done" ${busy?'disabled':''}>Done</button>
+             ${r.status !== 'doing'
+               ? `<button class="btn small ghost" data-req="${r.id}" data-val="doing" ${busy?'disabled':''}>Start</button>`
+               : `<span class="chip hot">In progress</span>`}
+             <button class="btn small ghost" data-req="${r.id}" data-val="dropped" ${busy?'disabled':''}>Drop</button>`}
+      </div>
+      <button class="linkbtn" data-reqopen="${r.id}">${open?'Less':'Details'}</button>
+    </div>
+  </article>`;
+}
+
+function requestsSection(){
+  if(!S.loaded.requests) return '';
+  const open = reqOpenList();
+  const overdue = open.filter(r => (reqDaysLeft(r) ?? 99) < 0).length;
+  const done = (S.requests||[]).filter(r => r.status === 'done');
+
+  return `<div class="block">
+    <h2 class="sec">Requests coming in${open.length?` &middot; ${open.length}`:''}</h2>
+
+    ${overdue?`<div class="warn" style="margin-bottom:12px">
+      <b>${overdue} past due.</b> Listed first.</div>`:''}
+    ${S.reqErr?`<p class="hint err">${esc(S.reqErr)}</p>`:''}
+
+    ${open.length
+      ? open.map(requestCard).join('')
+      : `<p class="hint">Nothing waiting. Requests arrive through the form at
+         <span class="mono">/request.html</span>.</p>`}
+
+    ${done.length?`<p class="hint" style="margin-top:12px">
+      <button class="linkbtn" id="reqDone" style="padding-left:0">${
+        S.reqShowDone ? 'Hide' : 'Show'} ${done.length} finished</button></p>
+      ${S.reqShowDone ? done.slice(0,20).map(requestCard).join('') : ''}`:''}
+  </div>`;
+}
+
+function wireRequests(){
+  document.querySelectorAll('[data-req]').forEach(el=>
+    el.addEventListener('click',()=>setRequestStatus(el.dataset.req, el.dataset.val)));
+  document.querySelectorAll('[data-reqopen]').forEach(el=>
+    el.addEventListener('click',()=>{
+      const id = el.dataset.reqopen;
+      S.reqOpen[id] = !S.reqOpen[id]; render();
+    }));
+  const dn = document.getElementById('reqDone');
+  if(dn) dn.addEventListener('click',()=>{ S.reqShowDone = !S.reqShowDone; render(); });
 }
 
 /* ================= approvals page ================= */
@@ -2648,6 +2841,8 @@ function pageDay(owner){
       <h2 class="sec">${esc(name)} &middot; ${esc(prettyDate())}</h2>
       ${ts.length ? ts.map(taskHtml).join('') : `<p class="hint">Nothing yet. Anything left open carries forward to the next day rather than disappearing.</p>`}
     </div>
+
+    ${owner === 'liam' ? requestsSection() : ''}
   </main>`;
 }
 
