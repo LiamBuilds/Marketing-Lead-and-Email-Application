@@ -565,7 +565,7 @@ const S = {
   /* board */
   kpiView:'scorecard', boardPipe:null, dealId:null, dealBusy:false, dealErr:'',
   calView:'schedule', invites:null, conflicts:{}, inviteFilter:'open',
-  inviteShowAll:false, inviteBusy:'', inviteErr:'',
+  inviteShowAll:false, inviteBusy:'', inviteErr:'', dateAsk:null,
   taskDraft:{ title:'', category:'outreach', priority:'2' },
   labels:null, labelOpen:null, labelBusy:'', labelErr:'',
   lastApproval:null, revertArm:false, revertBusy:false, revertNote:'',
@@ -696,6 +696,119 @@ async function loadInvites(){
   for(const c of (conf||[])) S.conflicts[c.invite_id] = c;
 
   S.loaded.invites = true;
+}
+
+/* The browser runs in Pacific, so building a Date from the parts and
+   letting it convert gives the right instant without hardcoding an
+   offset that breaks when daylight saving ends. */
+async function saveInviteDate(){
+  const a = S.dateAsk;
+  if(!a || a.busy) return;
+  if(!a.date){ a.err = 'A date is needed. Cancel if the email does not say.'; return render(); }
+
+  const [y,m,d] = a.date.split('-').map(Number);
+  const [hh,mm] = String(a.time || '17:00').split(':').map(Number);
+  const start = new Date(y, m-1, d, hh||0, mm||0, 0, 0);
+  if(isNaN(start)){ a.err = 'That date did not parse.'; return render(); }
+  const end = new Date(start.getTime() + Number(a.hours || 2)*3600*1000);
+
+  a.busy = true; a.err = ''; render();
+  let who = null;
+  try{ const { data } = await sb.auth.getUser(); who = data && data.user ? data.user.email : null; }
+  catch(e){ who = null; }
+
+  try{
+    const patch = {
+      starts_at: start.toISOString(),
+      ends_at:   end.toISOString(),
+      decision:  'going',
+      decided_at: new Date().toISOString(),
+      decided_by: who
+    };
+    if(String(a.location||'').trim()) patch.location = a.location.trim();
+    const { error } = await sb.from('event_invites').update(patch).eq('id', a.id);
+    if(error) throw error;
+    S.dateAsk = null;
+    S.loaded.invites = false;
+    await loadInvites();
+  }catch(err){
+    a.err = err.message || String(err); a.busy = false;
+  }
+  render();
+}
+
+/* Going without a date is still allowed. Pat often knows he is attending
+   before he knows the details, and refusing the decision would just mean
+   it never gets recorded. It simply will not reach the calendar until a
+   date exists. */
+async function goingWithoutDate(){
+  const a = S.dateAsk;
+  if(!a || a.busy) return;
+  const id = a.id;
+  S.dateAsk = null;
+  S.inviteBusy = id; render();
+  let who = null;
+  try{ const { data } = await sb.auth.getUser(); who = data && data.user ? data.user.email : null; }
+  catch(e){ who = null; }
+  const { error } = await sb.from('event_invites')
+    .update({ decision:'going', decided_at:new Date().toISOString(), decided_by:who })
+    .eq('id', id);
+  if(error) S.inviteErr = error.message;
+  S.loaded.invites = false;
+  await loadInvites();
+  S.inviteBusy=''; render();
+}
+
+function dateAskSheet(){
+  const a = S.dateAsk;
+  if(!a) return '';
+  const v = (S.invites||[]).find(x => x.id === a.id) || {};
+
+  return `<div class="sheet" role="dialog" aria-modal="true" aria-label="When is it">
+    <div class="sheet-in">
+      <div class="sheet-head">
+        <h2>When is it?</h2>
+        <button class="linkbtn" id="daClose">Cancel</button>
+      </div>
+
+      <p class="hint" style="margin-top:8px"><b>${esc(v.event_name || 'This invitation')}</b>
+        has no date, so it cannot reach Pat's calendar without one.</p>
+
+      ${v.web_link ? `<div class="apv-file" style="margin-top:12px">
+        <a class="chip hot" href="${esc(v.web_link)}" target="_blank" rel="noopener">
+          Open the original email</a>
+        <span class="hint">The date is usually in there.</span></div>` : ''}
+
+      ${v.summary ? `<div class="apv-mine" style="margin-top:12px">
+        <span class="eyebrow">What the scanner read</span>
+        <p>${esc(v.summary)}</p></div>` : ''}
+
+      <div class="field"><label for="daDate">Date</label>
+        <input type="date" id="daDate" value="${esc(a.date)}" /></div>
+
+      <div class="field"><label for="daTime">Start time</label>
+        <input type="time" id="daTime" value="${esc(a.time)}" /></div>
+
+      <div class="field"><label for="daHours">How long</label>
+        <select id="daHours">${[['1','1 hour'],['2','2 hours'],['3','3 hours'],
+          ['4','4 hours'],['8','All day']].map(([k,l])=>
+          `<option value="${k}" ${a.hours===k?'selected':''}>${l}</option>`).join('')}</select></div>
+
+      <div class="field"><label for="daLoc">Where</label>
+        <input type="text" id="daLoc" value="${esc(a.location)}"
+               placeholder="Optional" autocomplete="off" /></div>
+
+      ${a.err?`<p class="hint err">${esc(a.err)}</p>`:''}
+
+      <div class="sheet-foot">
+        <button class="btn" id="daSave" ${a.busy?'disabled':''}>${
+          a.busy?'Saving&hellip;':'Save and mark going'}</button>
+        <p class="hint" style="margin-top:10px">
+          <button class="linkbtn" id="daSkip" style="padding-left:0" ${a.busy?'disabled':''}>Mark going without a date</button>
+          &mdash; the decision is recorded, but nothing reaches the calendar until a date exists.</p>
+      </div>
+    </div>
+  </div>`;
 }
 
 function conflictStrip(v){
@@ -950,8 +1063,23 @@ async function submitApproval(){
   S.apvSaving = false; render();
 }
 
+/* Marking an undated invite as going used to do nothing visible: the
+   decision saved, and the calendar workflow skipped it because it will
+   not invent a time. Three invites sat in that state. The decision is
+   the moment someone is actually looking at the invitation, so that is
+   where to ask for the date. */
 async function decideInvite(id, decision){
   if(S.inviteBusy) return;
+
+  if(decision === 'going'){
+    const v = (S.invites||[]).find(x => x.id === id);
+    if(v && !v.starts_at){
+      S.dateAsk = { id, date:'', time:'17:00', hours:'2',
+                    location: v.location || '', busy:false, err:'' };
+      S.inviteErr = ''; return render();
+    }
+  }
+
   S.inviteBusy = id; S.inviteErr=''; render();
   let who = null;
   try{ const { data } = await sb.auth.getUser(); who = data && data.user ? data.user.email : null; }
@@ -1869,7 +1997,7 @@ function pageInvites(){
     ${rows.length
       ? `<div class="inv-list">${rows.map(inviteRow).join('')}</div>`
       : `<div class="empty"><h2>Nothing here</h2><p>No invitations in this list.</p></div>`}
-  </main>`;
+  </main>${dateAskSheet()}`;
 }
 
 function evRow(e){
@@ -2729,6 +2857,19 @@ function wireBoard(){
 
   const isa = document.getElementById('invShowAll');
   if(isa) isa.addEventListener('click',()=>{ S.inviteShowAll = !S.inviteShowAll; render(); });
+
+  const dac = document.getElementById('daClose');
+  if(dac) dac.addEventListener('click',()=>{ S.dateAsk = null; render(); });
+  const das = document.getElementById('daSave');
+  if(das) das.addEventListener('click', saveInviteDate);
+  const dsk = document.getElementById('daSkip');
+  if(dsk) dsk.addEventListener('click', goingWithoutDate);
+  [['daDate','date'],['daTime','time'],['daLoc','location']].forEach(([id,key])=>{
+    const el = document.getElementById(id);
+    if(el) el.addEventListener('input',()=>{ if(S.dateAsk) S.dateAsk[key] = el.value; });
+  });
+  const dah = document.getElementById('daHours');
+  if(dah) dah.addEventListener('change',()=>{ if(S.dateAsk) S.dateAsk.hours = dah.value; });
 
   document.querySelectorAll('[data-decide]').forEach(el=>
     el.addEventListener('click',()=>decideInvite(el.dataset.decide, el.dataset.val)));
