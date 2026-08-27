@@ -564,7 +564,8 @@ const S = {
   kpi:null, kpiEdit:false, kpiBusy:false, kpiErr:'', kpiNote:'',
   /* board */
   kpiView:'scorecard', boardPipe:null, dealId:null, dealBusy:false, dealErr:'',
-  calView:'schedule', invites:null, conflicts:{}, inviteFilter:'open', inviteBusy:'', inviteErr:'',
+  calView:'schedule', invites:null, conflicts:{}, inviteFilter:'open',
+  inviteShowAll:false, inviteBusy:'', inviteErr:'',
   taskDraft:{ title:'', category:'outreach', priority:'2' },
   labels:null, labelOpen:null, labelBusy:'', labelErr:'',
   lastApproval:null, revertArm:false, revertBusy:false, revertNote:'',
@@ -1802,10 +1803,32 @@ function inviteRow(v){
   </article>`;
 }
 
+/* Pat only wants things he can drive to. Virtual is the reliable signal:
+   event_type and is_virtual agree on all twelve webinars, and those are
+   also most of the eighteen rows with no location, so a location filter
+   alone would either drop real events or keep every webinar.
+
+   The out-of-area list is deliberately short and names only cities that
+   have actually turned up. An unrecognised location stays visible, which
+   is the safe direction to fail in: a stray event Pat passes on costs a
+   click, one that vanishes silently costs the event. San Francisco stays,
+   since it is inside the service area. */
+const FAR_AWAY = /\b(detroit|miami|orlando|las vegas|phoenix|denver|chicago|atlanta|new york|boston|dallas|houston|seattle|nashville|washington|honolulu)\b/i;
+
+function isLocal(v){
+  if(v.is_virtual === true) return false;
+  if(String(v.event_type || '').toLowerCase() === 'webinar') return false;
+  if(/\b(online|virtual|webcast|livestream)\b/i.test(String(v.location || ''))) return false;
+  if(FAR_AWAY.test(String(v.location || '') + ' ' + String(v.event_name || ''))) return false;
+  return true;
+}
+
 function pageInvites(){
   if(!S.loaded.invites) return `<main class="page">${calSwitch()}${loading()}</main>`;
 
-  const all = S.invites || [];
+  const everything = S.invites || [];
+  const all = S.inviteShowAll ? everything : everything.filter(isLocal);
+  const hidden = everything.length - everything.filter(isLocal).length;
   const open = all.filter(v=>v.decision==='undecided' && !v.is_past);
   const sets = {
     open: open,
@@ -1822,7 +1845,13 @@ function pageInvites(){
     ['past','Past', sets.past.length]
   ].map(([k,label,n])=>
     `<button class="fchip ${S.inviteFilter===k?'on':''}" data-ifilt="${k}">${
-      label} <b>${n}</b></button>`).join('');
+      label} <b>${n}</b></button>`).join('')
+    + (hidden || S.inviteShowAll
+        ? `<button class="fchip ${S.inviteShowAll?'on':''}" id="invShowAll"
+             title="Webinars and anything outside the region">${
+             S.inviteShowAll ? 'Hide remote' : 'Show remote'} <b>${
+             S.inviteShowAll ? '' : hidden}</b></button>`
+        : '');
 
   if(!all.length){
     return `<main class="page">${calSwitch()}
@@ -2697,6 +2726,9 @@ function wireBoard(){
 
   document.querySelectorAll('[data-ifilt]').forEach(el=>
     el.addEventListener('click',()=>{ S.inviteFilter = el.dataset.ifilt; render(); }));
+
+  const isa = document.getElementById('invShowAll');
+  if(isa) isa.addEventListener('click',()=>{ S.inviteShowAll = !S.inviteShowAll; render(); });
 
   document.querySelectorAll('[data-decide]').forEach(el=>
     el.addEventListener('click',()=>decideInvite(el.dataset.decide, el.dataset.val)));
