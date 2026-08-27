@@ -564,7 +564,7 @@ const S = {
   kpi:null, kpiEdit:false, kpiBusy:false, kpiErr:'', kpiNote:'',
   /* board */
   kpiView:'scorecard', boardPipe:null, dealId:null, dealBusy:false, dealErr:'',
-  calView:'schedule', invites:null, inviteFilter:'open', inviteBusy:'', inviteErr:'',
+  calView:'schedule', invites:null, conflicts:{}, inviteFilter:'open', inviteBusy:'', inviteErr:'',
   taskDraft:{ title:'', category:'outreach', priority:'2' },
   labels:null, labelOpen:null, labelBusy:'', labelErr:'',
   lastApproval:null, revertArm:false, revertBusy:false, revertNote:'',
@@ -681,10 +681,48 @@ async function loadWeek(){
 }
 
 async function loadInvites(){
-  const { data, error } = await sb.from('v_event_invites').select('*');
+  const [{ data, error }, { data:conf }] = await Promise.all([
+    sb.from('v_event_invites').select('*'),
+    sb.from('v_invite_conflicts').select('*')
+  ]);
   if(error) S.inviteErr = error.message;
   S.invites = data || [];
+
+  /* Keyed by invite id so the card can warn before the decision rather
+     than after. Pat double-booked the R21 Social against two things
+     already on his calendar, and nothing on screen said so. */
+  S.conflicts = {};
+  for(const c of (conf||[])) S.conflicts[c.invite_id] = c;
+
   S.loaded.invites = true;
+}
+
+function conflictStrip(v){
+  const c = S.conflicts && S.conflicts[v.id];
+  if(!c || v.is_past) return '';
+
+  /* Past the sync horizon, silence would read as "the day is free" when
+     it actually means "nothing has been synced that far out". Those are
+     different answers and only one of them is safe to act on. */
+  if(!c.in_window){
+    return `<div class="warn info" style="margin-top:10px">
+      <b>Calendar not synced this far out.</b>
+      Pat's calendar only reaches ${esc(String(c.synced_through))}, so nothing here
+      can say whether that day is clear.</div>`;
+  }
+
+  const n = Number(c.same_day_events || 0);
+  const ov = Number(c.overlapping || 0);
+  if(!n) return '';
+
+  const list = String(c.same_day_list || '').split(' | ').filter(Boolean);
+  const shown = list.slice(0, 4).join(' &middot; ');
+  const more = list.length > 4 ? ` and ${list.length - 4} more` : '';
+
+  return `<div class="warn ${ov ? '' : 'soft'}" style="margin-top:10px">
+    <b>${ov ? `Clashes with ${ov} thing${ov===1?'':'s'} already booked.`
+            : `Pat already has ${n} thing${n===1?'':'s'} that day.`}</b>
+    <span class="when">${esc(shown)}${more}</span></div>`;
 }
 
 /* ================= approvals ================= */
@@ -1741,6 +1779,8 @@ function inviteRow(v){
     ${v.summary?`<p class="inv-sum">${esc(v.summary)}</p>`:''}
     ${v.sponsorship_levels?`<div class="inv-lvl"><b>Sponsorship</b> ${
       esc(String(v.sponsorship_levels).slice(0,220))}</div>`:''}
+
+    ${conflictStrip(v)}
 
     <div class="inv-foot">
       <div class="inv-acts">
