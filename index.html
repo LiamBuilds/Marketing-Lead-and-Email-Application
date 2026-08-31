@@ -567,6 +567,7 @@ const S = {
   calView:'schedule', invites:null, conflicts:{}, inviteFilter:'open',
   inviteShowAll:false, inviteBusy:'', inviteErr:'', dateAsk:null,
   taskDraft:{ title:'', category:'outreach', priority:'2' },
+  assets:null,
   labels:null, labelOpen:null, labelBusy:'', labelErr:'',
   lastApproval:null, revertArm:false, revertBusy:false, revertNote:'',
   crmQ:'', crmHits:null, crmBusy:false, crmOpen:false, crmSeq:0,
@@ -679,6 +680,57 @@ async function loadWeek(){
   const { data } = await sb.from('v_dash_week').select('*');
   S.week = data || [];
   S.loaded.week = true;
+}
+
+/* ================= marketing assets ================= */
+/* Flyers and one-pagers live on the website. The email carries a link
+   rather than an attachment: a PDF on a first contact raises spam scores
+   and drops open rates, and a link on haggertybuilds.com reads as normal
+   while a tracked one tells you who looked. */
+async function loadAssets(){
+  const { data } = await sb.from('marketing_assets').select('*')
+    .eq('active', true).order('title');
+  S.assets = data || [];
+  S.loaded.assets = true;
+}
+
+/* Sector match first, then everything else. Filtering the rest out would
+   hide the general capability sheet, which suits every contact. */
+function assetsFor(r){
+  const all = S.assets || [];
+  const vid = r && r.vertical_id;
+  return all.slice().sort((a,b)=>{
+    const am = (a.vertical_id && a.vertical_id === vid) ? 0 : 1;
+    const bm = (b.vertical_id && b.vertical_id === vid) ? 0 : 1;
+    if(am !== bm) return am - bm;
+    return String(a.title).localeCompare(String(b.title));
+  });
+}
+
+/* Inserted at the cursor as a plain sentence rather than a button. In a
+   first contact a styled button reads as a mailshot, and descriptive
+   wording gets clicked more often than "view case study". The link is
+   built from the slug so tracking works without Pat thinking about it. */
+function insertAsset(draftId, slug){
+  const a = (S.assets||[]).find(x => x.slug === slug);
+  const el = document.getElementById('b-' + draftId);
+  if(!a || !el) return;
+
+  const r = S.board.find(x => x.queue_id === S.activeId);
+  const cid = r ? r.contact_id : '';
+  const url = 'https://haggertybuilds.com/go/' + encodeURIComponent(a.slug)
+            + (cid ? '?c=' + encodeURIComponent(cid) : '');
+  const phrase = 'I put together ' + a.anchor_text + ' here: ' + url;
+
+  const start = el.selectionStart == null ? el.value.length : el.selectionStart;
+  const end   = el.selectionEnd   == null ? el.value.length : el.selectionEnd;
+  const before = el.value.slice(0, start).replace(/\s+$/, '');
+  const after  = el.value.slice(end).replace(/^\s+/, '');
+  el.value = (before ? before + '\n\n' : '') + phrase + (after ? '\n\n' + after : '');
+
+  const pos = (before ? before.length + 2 : 0) + phrase.length;
+  el.focus();
+  try{ el.setSelectionRange(pos, pos); }catch(e){}
 }
 
 async function loadInvites(){
@@ -1372,6 +1424,7 @@ async function ensure(page){
     if(!S.loaded.week) await loadWeek();
     if(!S.loaded.tasks[S.me]) await loadTasks(S.me);
     if(!S.loaded.seq) await loadSequences();
+    if(!S.loaded.assets) await loadAssets();
   }
   if(page==='calendar' && !S.loaded.week) await loadWeek();
   if(page==='calendar' && !S.loaded.invites) await loadInvites();
@@ -1473,6 +1526,8 @@ function wirePage(){
     el.addEventListener('click',()=>{ const id=el.dataset.toggle; S.open[id]=!S.open[id]; render(); }));
   document.querySelectorAll('[data-use]').forEach(el=>
     el.addEventListener('click',()=>useDraft(el.dataset.use)));
+  document.querySelectorAll('[data-asset]').forEach(el=>
+    el.addEventListener('click',()=>insertAsset(el.dataset.draft, el.dataset.asset)));
   document.querySelectorAll('[data-stop]').forEach(el=>
     el.addEventListener('click',()=>stopFollowUp(el.dataset.stop, el.dataset.stopnow === '1')));
   document.querySelectorAll('[data-gen]').forEach(el=>
@@ -1742,6 +1797,26 @@ function detailHtml(){
     ${S.err?`<p class="hint err">${esc(S.err)}</p>`:''}`;
 }
 
+function assetPicker(d){
+  const list = assetsFor(S.board.find(x => x.queue_id === S.activeId));
+  if(!list.length) return '';
+  const r = S.board.find(x => x.queue_id === S.activeId);
+  const vid = r && r.vertical_id;
+
+  return `<div class="field">
+    <label>Attach a flyer</label>
+    <div class="chips" style="margin-top:0">
+      ${list.map(a=>`<button class="chip ${
+        (a.vertical_id && a.vertical_id === vid) ? 'hot' : ''}"
+        style="cursor:pointer"
+        data-asset="${esc(a.slug)}" data-draft="${esc(d.id)}"
+        title="${esc(a.blurb || a.title)}">${esc(a.title)}</button>`).join('')}
+    </div>
+    <p class="hint">Adds a line with a tracked link at the cursor. One per email:
+      a second link roughly halves the clicks on the first.</p>
+  </div>`;
+}
+
 function optHtml(d,i){
   const open = !!S.open[d.id];
   const subject = d.edited_subject || d.subject || '';
@@ -1755,6 +1830,7 @@ function optHtml(d,i){
         <input type="text" id="s-${d.id}" value="${esc(subject)}"/></div>
       <div class="field"><label for="b-${d.id}">Message</label>
         <textarea id="b-${d.id}">${esc(toPlain(d.edited_body||d.body_html))}</textarea></div>
+      ${assetPicker(d)}
       <div class="actions">
         <button class="btn" data-use="${d.id}" ${S.busy?'disabled':''}>
           ${S.busy?'Sending&hellip;':'Send email'}</button>
