@@ -337,7 +337,22 @@ async function submit(){
     /* The row goes in first. If a photo upload then fails, the request
        still exists and can be chased, rather than the whole thing being
        lost because one file was too big or the signal dropped. */
-    const { data, error } = await sb.from('requests').insert({
+    /* The id is generated here rather than read back from the insert.
+       Anonymous submitters have INSERT and nothing else, by design: a
+       select policy would let anyone holding the link read every request
+       anyone had ever sent. Asking for the row back needs that select,
+       and PostgREST reports the refusal as an RLS violation on the
+       insert, which is what broke every submission until now. Knowing
+       the id up front also means the photo rows can be written without
+       a round trip. */
+    const reqId = (crypto.randomUUID && crypto.randomUUID()) ||
+      'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = Math.random() * 16 | 0;
+        return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+      });
+
+    const { error } = await sb.from('requests').insert({
+      id:              reqId,
       requester_name:  F.name.trim(),
       requester_email: F.email.trim().toLowerCase(),
       request_type:    F.type,
@@ -346,10 +361,9 @@ async function submit(){
       title:           F.title.trim(),
       details:         F.details.trim() || null,
       needed_by:       F.needed_by || null
-    }).select('id').single();
+    });
     if(error) throw error;
 
-    const reqId = data.id;
     F.ref = reqId.slice(0,8);
 
     let done = 0;
